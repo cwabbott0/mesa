@@ -42,6 +42,7 @@ LIBGLSL_FILES = \
 	$(GLSL_SRCDIR)/ir_hierarchical_visitor.cpp \
 	$(GLSL_SRCDIR)/ir_hv_accept.cpp \
 	$(GLSL_SRCDIR)/ir_import_prototypes.cpp \
+	$(GLSL_SRCDIR)/ir_loop_jumps.cpp \
 	$(GLSL_SRCDIR)/ir_print_visitor.cpp \
 	$(GLSL_SRCDIR)/ir_reader.cpp \
 	$(GLSL_SRCDIR)/ir_rvalue_visitor.cpp \
