@@ -61,6 +61,10 @@ public:
    virtual ir_visitor_status visit(ir_variable *v);
    virtual ir_visitor_status visit(ir_dereference_variable *ir);
 
+   virtual ir_visitor_status visit(ir_phi_if *ir);
+   virtual ir_visitor_status visit(ir_phi_loop_begin *ir);
+   virtual ir_visitor_status visit(ir_phi_loop_end *ir);
+
    virtual ir_visitor_status visit_enter(ir_if *ir);
 
    virtual ir_visitor_status visit_enter(ir_function *ir);
@@ -84,21 +88,29 @@ public:
 
 } /* anonymous namespace */
 
-ir_visitor_status
-ir_validate::visit(ir_dereference_variable *ir)
+
+static void
+validate_var_use(ir_variable *var, struct hash_table *ht, void *ptr,
+		 const char *name)
 {
-   if ((ir->var == NULL) || (ir->var->as_variable() == NULL)) {
-      printf("ir_dereference_variable @ %p does not specify a variable %p\n",
-	     (void *) ir, (void *) ir->var);
+   if ((var == NULL) || (var->as_variable() == NULL)) {
+      printf("%s @ %p does not specify a variable %p\n",
+	     name, ptr, (void *) var);
       abort();
    }
 
-   if (hash_table_find(ht, ir->var) == NULL) {
-      printf("ir_dereference_variable @ %p specifies undeclared variable "
+   if (hash_table_find(ht, var) == NULL) {
+      printf("%s @ %p specifies undeclared variable "
 	     "`%s' @ %p\n",
-	     (void *) ir, ir->var->name, (void *) ir->var);
+	     name, ptr, var->name, (void *) var);
       abort();
    }
+}
+
+ir_visitor_status
+ir_validate::visit(ir_dereference_variable *ir)
+{
+   validate_var_use(ir->var, this->ht, (void *) ir, "ir_dereference_variable");
 
    this->validate_ir(ir, this->data);
 
@@ -131,6 +143,116 @@ ir_validate::visit_enter(class ir_dereference_array *ir)
 
    return visit_continue;
 }
+
+static void
+validate_ssa_def(ir_variable *var, ir_instruction *ir, struct hash_table *ht)
+{
+   if (hash_table_find(ht, var)) {
+      printf("SSA variable `%s' at %p assigned more than once\n",
+	     var->name, (void *) var);
+      if (var->ssa_assignment != NULL) {
+	 printf("First assignment at ir_assignment %p:\n",
+	        (void *) var->ssa_assignment);
+	 var->ssa_assignment->print();
+      } else if (var->ssa_phi != NULL) {
+	 printf("First assignment at ir_phi %p:\n",
+		(void *) var->ssa_phi);
+	 var->ssa_phi->print();
+      } else {
+	 printf("First assignment at ir_call %p:\n",
+		(void *) var->ssa_call);
+	 var->ssa_call->print();
+      }
+      printf("\nSecond assignment at %p:\n", (void *) ir);
+      ir->print();
+      printf("\n");
+      abort();
+   }
+   hash_table_insert(ht, var, var);
+}
+
+static void
+validate_phi_dest(ir_phi *ir, struct hash_table *ht)
+{
+   if ((ir->dest == NULL) || (ir->dest->as_variable() == NULL)) {
+      printf("ir_phi @ %p does not specify a destination %p\n",
+	     (void *) ir, (void *) ir->dest);
+      abort();
+   }
+
+   validate_ssa_def(ir->dest, ir, ht);
+
+   assert(ir->dest->ssa_phi == ir);
+   assert(ir->dest->ssa_assignment == NULL);
+   assert(ir->dest->ssa_call == NULL);
+}
+
+ir_visitor_status
+ir_validate::visit(ir_phi_if *ir)
+{
+   validate_phi_dest(ir, this->ht);
+
+   if (ir->if_src) {
+      validate_var_use(ir->if_src, this->ht, (void *) ir, "ir_phi_if");
+   }
+
+   if (ir->else_src) {
+      validate_var_use(ir->else_src, this->ht, (void *) ir, "ir_phi_if");
+   }
+
+   return visit_continue;
+}
+
+
+ir_visitor_status
+ir_validate::visit(ir_phi_loop_begin *ir)
+{
+   validate_phi_dest(ir, this->ht);
+
+   /*
+    * note: ir_phi_loop_begin is a special case in that variables may be, and in
+    * fact normally are, defined *after* they are used in everything except
+    * enter_src
+    */
+
+   if (ir->enter_src) {
+      validate_var_use(ir->enter_src, this->ht, (void *) ir, "ir_phi_loop_begin");
+   }
+
+   if ((ir->repeat_src == NULL) && (ir->repeat_src->as_variable() == NULL)) {
+      printf("ir_phi_loop_begin @ %p does not specify a variable %p\n",
+	    (void *) ir, (void *) ir->repeat_src);
+      abort();
+   }
+
+   foreach_list(n, &ir->continue_srcs) {
+      ir_phi_jump_src *src = (ir_phi_jump_src *) n;
+
+      if ((src->src == NULL) && (src->src->as_variable() == NULL)) {
+	 printf("ir_phi_loop_begin @ %p does not specify a variable %p\n",
+	       (void *) ir, (void *) src->src);
+	 abort();
+      }
+   }
+
+   return visit_continue;
+}
+
+ir_visitor_status
+ir_validate::visit(ir_phi_loop_end *ir)
+{
+   validate_phi_dest(ir, this->ht);
+
+   foreach_list(n, &ir->break_srcs) {
+      ir_phi_jump_src *src = (ir_phi_jump_src *) n;
+      if (src->src) {
+	 validate_var_use(src->src, this->ht, (void *) ir, "ir_phi_loop_end");
+      }
+   }
+
+   return visit_continue;
+}
+
 
 ir_visitor_status
 ir_validate::visit_enter(ir_if *ir)
@@ -684,6 +806,8 @@ ir_visitor_status
 ir_validate::visit_enter(ir_assignment *ir)
 {
    const ir_dereference *const lhs = ir->lhs;
+   ir_variable *var = lhs->variable_referenced();
+
    if (lhs->type->is_scalar() || lhs->type->is_vector()) {
       if (ir->write_mask == 0) {
 	 printf("Assignment LHS is %s, but write mask is 0:\n",
@@ -707,6 +831,15 @@ ir_validate::visit_enter(ir_assignment *ir)
       }
    }
 
+   if (var && var->data.mode == ir_var_temporary_ssa) {
+      validate_ssa_def(var, ir, this->ht);
+
+      assert(var->ssa_assignment == ir);
+      assert(var->ssa_phi == NULL);
+      assert(var->ssa_call == NULL);
+      assert(ir->write_mask == (1 << var->type->vector_elements) - 1);
+   }
+
    this->validate_ir(ir, this->data);
 
    return visit_continue;
@@ -727,6 +860,15 @@ ir_validate::visit_enter(ir_call *ir)
 	 printf("callee type %s does not match return storage type %s\n",
 	        callee->return_type->name, ir->return_deref->type->name);
 	 abort();
+      }
+
+      ir_variable *return_var = ir->return_deref->variable_referenced();
+      if (return_var != NULL
+	  && return_var->data.mode == ir_var_temporary_ssa) {
+	 validate_ssa_def(return_var, ir, this->ht);
+	 assert(return_var->ssa_assignment == NULL);
+	 assert(return_var->ssa_phi == NULL);
+	 assert(return_var->ssa_call == ir);
       }
    } else if (callee->return_type != glsl_type::void_type) {
       printf("ir_call has non-void callee but no return storage\n");

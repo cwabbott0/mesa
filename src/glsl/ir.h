@@ -78,6 +78,9 @@ enum ir_node_type {
    ir_type_if,
    ir_type_loop,
    ir_type_loop_jump,
+   ir_type_phi_if,
+   ir_type_phi_loop_begin,
+   ir_type_phi_loop_end,
    ir_type_return,
    ir_type_swizzle,
    ir_type_texture,
@@ -139,6 +142,10 @@ public:
    virtual class ir_discard *           as_discard()          { return NULL; }
    virtual class ir_jump *              as_jump()             { return NULL; }
    virtual class ir_loop_jump *         as_loop_jump()        { return NULL; }
+   virtual class ir_phi *               as_phi()              { return NULL; }
+   virtual class ir_phi_if *            as_phi_if()           { return NULL; }
+   virtual class ir_phi_loop_begin *    as_phi_loop_begin()   { return NULL; }
+   virtual class ir_phi_loop_end *      as_phi_loop_end()     { return NULL; }
    /*@}*/
 
    /**
@@ -289,10 +296,11 @@ enum ir_variable_mode {
    ir_var_function_in,
    ir_var_function_out,
    ir_var_function_inout,
-   ir_var_const_in,	/**< "in" param that must be a constant expression */
-   ir_var_system_value, /**< Ex: front-face, instance-id, etc. */
-   ir_var_temporary,	/**< Temporary variable generated during compilation. */
-   ir_var_mode_count	/**< Number of variable modes */
+   ir_var_const_in,	 /**< "in" param that must be a constant expression */
+   ir_var_system_value,  /**< Ex: front-face, instance-id, etc. */
+   ir_var_temporary,	 /**< Temporary variable generated during compilation. */
+   ir_var_temporary_ssa, /**< Temporary variable with only one definition. */
+   ir_var_mode_count	 /**< Number of variable modes */
 };
 
 /**
@@ -736,6 +744,43 @@ public:
     */
    ir_constant *constant_initializer;
 
+   /**
+    * Assignment that creates this variable, if it is an SSA temporary
+    *
+    * SSA variables are declared in the assignment/phi node/return where they
+    * are defined, unlike everything else where the lhs defereference always
+    * points to an ir_variable somewhere else in the ir tree. Storing the
+    * parent assignment here allows us to more easily traverse the use-def
+    * chains during optimizations.
+    *
+    * \sa ir_variable::ssa_phi
+    * \sa ir_variable::ssa_call
+    */
+
+   ir_assignment *ssa_assignment;
+
+   /**
+    * Phi node that creates this variable, if it is an SSA temporary
+    *
+    * Note: if this variable is an SSA temporary, then one of this field,
+    * \c ::ssa_assignment, or \c ::ssa_call is non-null, but not both.
+    *
+    * \sa ir_variable::ssa_assignment
+    * \sa ir_variable::ssa_call
+    */
+
+   ir_phi *ssa_phi;
+
+   /**
+    * Call whose return dereference creates this variable, if it is an SSA
+    * temporary
+    *
+    * \sa ir_variable::ssa_assignment
+    * \sa ir_variable::ssa_phi
+    */
+
+   ir_call *ssa_call;
+
 private:
    /**
     * For variables that are in an interface block or are an instance of an
@@ -987,6 +1032,8 @@ public:
    exec_list  then_instructions;
    /** List of ir_instruction for the body of the else branch */
    exec_list  else_instructions;
+   /** List of phi nodes at the end of the if */
+   exec_list phi_nodes;
 };
 
 
@@ -1013,6 +1060,147 @@ public:
 
    /** List of ir_instruction that make up the body of the loop. */
    exec_list body_instructions;
+
+   /** List of phi nodes at the beginning of the body of the loop. */
+   exec_list begin_phi_nodes;
+   /** List of phi nodes immediately after the loop. */
+   exec_list end_phi_nodes;
+};
+
+/**
+ * Base class for instructions representing phi nodes
+ *
+ * There are three join points where phi nodes can occur:
+ * * after an if statement
+ * * at the beginning of a loop
+ * * after a loop
+ *
+ * Each of these points has an associated subclass of ir_phi with places to
+ * store the input variables corresponding to each predecessor basic block.
+ * Note that an input may be null, in which case the value coming from that
+ * basic block is undefined. A null input conveys important information about
+ * the original program before the conversion to SSA, and so it *cannot* be
+ * optimized away (see "Global Code Motion Global Value Numbering" by Click for
+ * details).
+ */
+
+
+class ir_phi : public ir_instruction {
+public:
+   virtual ir_phi *clone(void *mem_ctx, hash_table *ht) const;
+
+   virtual void accept(ir_visitor *v)
+   {
+      v->visit(this);
+   }
+
+   virtual ir_visitor_status accept(ir_hierarchical_visitor *);
+
+   virtual ir_phi *as_phi()
+   {
+      return this;
+   }
+
+   ir_variable *dest;
+
+protected:
+   ir_phi();
+};
+
+
+class ir_phi_if : public ir_phi {
+public:
+   ir_phi_if(ir_variable *dest, ir_variable *if_src, ir_variable *else_src);
+
+   virtual ir_phi_if *clone(void *mem_ctx, hash_table *ht) const;
+
+   virtual void accept(ir_visitor *v)
+   {
+      v->visit(this);
+   }
+
+   virtual ir_visitor_status accept(ir_hierarchical_visitor *);
+
+   virtual ir_phi_if *as_phi_if()
+   {
+      return this;
+   }
+
+   /** the value dest takes if the if branch is taken */
+   ir_variable *if_src;
+   /** the value dest takes if the if branch is not taken */
+   ir_variable *else_src;
+};
+
+
+/**
+ * Represents a phi node source from a loop jump instruction (break or continue)
+ */
+
+struct ir_phi_jump_src : public exec_node {
+   ir_loop_jump *jump;
+   ir_variable *src;
+};
+
+
+class ir_phi_loop_begin : public ir_phi {
+public:
+   ir_phi_loop_begin(ir_variable *dest, ir_variable *enter_src, ir_variable *repeat_src);
+
+   virtual ir_phi_loop_begin *clone(void *mem_ctx, hash_table *ht) const;
+
+   virtual void accept(ir_visitor *v)
+   {
+      v->visit(this);
+   }
+
+   virtual ir_visitor_status accept(ir_hierarchical_visitor *);
+
+   virtual ir_phi_loop_begin *as_phi_loop_begin()
+   {
+      return this;
+   }
+
+   /** the value dest takes on the first iteration of the loop */
+   ir_variable *enter_src;
+
+   /**
+    * The value dest takes after reaching the end of the loop and going back to
+    * the beginning.
+    */
+   ir_variable *repeat_src;
+
+   /**
+    * A list of ir_phi_jump_src structures representing the value dest will take
+    * after each continue.
+    */
+   exec_list continue_srcs;
+};
+
+
+class ir_phi_loop_end : public ir_phi {
+public:
+   ir_phi_loop_end(ir_variable *dest);
+
+   virtual ir_phi_loop_end *clone(void *mem_ctx, hash_table *ht) const;
+
+   virtual void accept(ir_visitor *v)
+   {
+      v->visit(this);
+   }
+
+   virtual ir_visitor_status accept(ir_hierarchical_visitor *);
+
+   virtual ir_phi_loop_end *as_phi_loop_end()
+   {
+      return this;
+   }
+
+   /**
+    * A list of ir_phi_jump_src structures representing the value dest will take
+    * after each break.
+    */
+   exec_list break_srcs;
 };
 
 
