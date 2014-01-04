@@ -2379,6 +2379,27 @@ fs_visitor::visit(ir_function_signature *ir)
 }
 
 void
+fs_visitor::visit(ir_phi_if *ir)
+{
+   assert(!"not reached");
+   (void)ir;
+}
+
+void
+fs_visitor::visit(ir_phi_loop_begin *ir)
+{
+   assert(!"not reached");
+   (void)ir;
+}
+
+void
+fs_visitor::visit(ir_phi_loop_end *ir)
+{
+   assert(!"not reached");
+   (void)ir;
+}
+
+void
 fs_visitor::visit(ir_emit_vertex *)
 {
    assert(!"not reached");

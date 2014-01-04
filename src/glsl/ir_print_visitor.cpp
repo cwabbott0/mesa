@@ -111,6 +111,10 @@ void ir_print_visitor::indent(void)
 const char *
 ir_print_visitor::unique_name(ir_variable *var)
 {
+   if (var == NULL) {
+      return "(undefined)";
+   }
+
    /* var->name can be NULL in function prototypes when a type is given for a
     * parameter but no name is given.  In that case, just return an empty
     * string.  Don't worry about tracking the generated name in the printable
@@ -137,6 +141,29 @@ ir_print_visitor::unique_name(ir_variable *var)
    _mesa_symbol_table_add_symbol(this->symbols, -1, name, var);
    return name;
 }
+
+const char *
+ir_print_visitor::unique_name(ir_loop_jump *jump)
+{
+   const char *name = (const char *) hash_table_find(this->printable_names, jump);
+   if (name != NULL)
+      return name;
+
+   if (jump->is_continue()) {
+      static unsigned i = 0;
+      name = ralloc_asprintf(this->mem_ctx, "cont@%u", ++i);
+   } else if (jump->is_break()) {
+      static unsigned i = 0;
+      name = ralloc_asprintf(this->mem_ctx, "break@%u", ++i);
+   } else {
+      assert(!"shouldn't get here");
+      name = NULL;
+   }
+   hash_table_insert(this->printable_names, (void *) name, jump);
+
+   return name;
+}
+
 
 static void
 print_type(FILE *f, const glsl_type *t)
@@ -167,7 +194,8 @@ void ir_print_visitor::visit(ir_variable *ir)
    const char *const inv = (ir->data.invariant) ? "invariant " : "";
    const char *const mode[] = { "", "uniform ", "shader_in ", "shader_out ",
                                 "in ", "out ", "inout ",
-			        "const_in ", "sys ", "temporary " };
+			        "const_in ", "sys ", "temporary ",
+			        "temporary_ssa " };
    STATIC_ASSERT(ARRAY_SIZE(mode) == ir_var_mode_count);
    const char *const interp[] = { "", "smooth", "flat", "noperspective" };
    STATIC_ASSERT(ARRAY_SIZE(interp) == INTERP_QUALIFIER_COUNT);
@@ -352,7 +380,15 @@ void ir_print_visitor::visit(ir_swizzle *ir)
 void ir_print_visitor::visit(ir_dereference_variable *ir)
 {
    ir_variable *var = ir->variable_referenced();
-   fprintf(f, "(var_ref %s) ", unique_name(var));
+   fprintf(f, "(var_ref ");
+   if (var->data.mode == ir_var_temporary_ssa
+       && var->ssa_owner && var->ssa_owner->as_assignment()
+       && ir == var->ssa_owner->as_assignment()->lhs) {
+      var->accept(this);
+      fprintf(f, ")");
+   } else {
+      fprintf(f, " %s) ", unique_name(var));
+   }
 }
 
 
@@ -527,6 +563,25 @@ ir_print_visitor::visit(ir_if *ir)
       }
       indentation--;
       indent();
+      fprintf(f, ")\n");
+   } else {
+      fprintf(f, "()\n");
+   }
+
+   indent();
+   if (!ir->phi_nodes.is_empty()) {
+      fprintf(f, "(\n");
+      indentation++;
+
+      foreach_list(n, &ir->phi_nodes) {
+	 ir_phi_if *const phi = (ir_phi_if *) n;
+
+	 indent();
+	 phi->accept(this);
+	 fprintf(f, "\n");
+      }
+      indentation--;
+      indent();
       fprintf(f, "))\n");
    } else {
       fprintf(f, "())\n");
@@ -537,9 +592,26 @@ ir_print_visitor::visit(ir_if *ir)
 void
 ir_print_visitor::visit(ir_loop *ir)
 {
-   fprintf(f, "(loop (\n");
-   indentation++;
+   fprintf(f, "(loop (");
 
+   if(!ir->begin_phi_nodes.is_empty()) {
+      indentation++;
+      fprintf(f, "\n");
+      foreach_list(n, &ir->begin_phi_nodes) {
+	 ir_phi_loop_begin *const phi = (ir_phi_loop_begin *) n;
+
+	 indent();
+	 phi->accept(this);
+	 fprintf(f, "\n");
+      }
+      indentation--;
+      indent();
+   }
+   fprintf(f, ")\n");
+
+   indent();
+   fprintf(f, "(\n");
+   indentation++;
    foreach_list(n, &ir->body_instructions) {
       ir_instruction *const inst = (ir_instruction *) n;
 
@@ -549,14 +621,102 @@ ir_print_visitor::visit(ir_loop *ir)
    }
    indentation--;
    indent();
-   fprintf(f, "))\n");
+   fprintf(f, ")\n");
+
+   indent();
+   if (!ir->end_phi_nodes.is_empty()) {
+      fprintf(f, "(\n");
+      indentation++;
+
+      foreach_list(n, &ir->end_phi_nodes) {
+	 ir_phi_loop_end *const phi = (ir_phi_loop_end *) n;
+
+	 indent();
+	 phi->accept(this);
+	 fprintf(f, "\n");
+      }
+      indentation--;
+      indent();
+      fprintf(f, "))\n");
+   } else {
+      fprintf(f, "())\n");
+   }
+}
+
+
+void
+ir_print_visitor::visit(ir_phi_if *ir)
+{
+   fprintf(f, "(phi_if\n");
+
+   indentation++;
+   indent();
+   ir->dest->accept(this);
+   fprintf(f, "\n");
+
+   indent();
+   fprintf(f, "%s %s", unique_name(ir->if_src), unique_name(ir->else_src));
+   indentation--;
+}
+
+void
+ir_print_visitor::print_phi_jump_src(ir_phi_jump_src *src)
+{
+   fprintf(f, "(phi_jump_src %s %s)", unique_name(src->jump),
+           unique_name(src->src));
+}
+
+void
+ir_print_visitor::visit(ir_phi_loop_begin *ir)
+{
+   fprintf(f, "(phi_loop_begin\n");
+
+   indentation++;
+   indent();
+   ir->dest->accept(this);
+   fprintf(f, "\n");
+
+   indent();
+   fprintf(f, "%s %s", unique_name(ir->enter_src), unique_name(ir->repeat_src));
+
+   foreach_list(n, &ir->continue_srcs) {
+      ir_phi_jump_src *src = (ir_phi_jump_src *) n;
+      indent();
+      print_phi_jump_src(src);
+   }
+
+   indentation--;
+   indent();
+   fprintf(f, ")");
+}
+
+
+void
+ir_print_visitor::visit(ir_phi_loop_end *ir)
+{
+   fprintf(f, "(phi_loop_end\n");
+
+   indentation++;
+   indent();
+   ir->dest->accept(this);
+   fprintf(f, "\n");
+
+   foreach_list(n, &ir->break_srcs) {
+      ir_phi_jump_src *src = (ir_phi_jump_src *) n;
+      indent();
+      print_phi_jump_src(src);
+   }
+
+   indentation--;
+   indent();
+   fprintf(f, ")");
 }
 
 
 void
 ir_print_visitor::visit(ir_loop_jump *ir)
 {
-   fprintf(f, "%s", ir->is_break() ? "break" : "continue");
+   fprintf(f, "(%s %s)", ir->is_break() ? "break" : "continue", unique_name(ir));
 }
 
 void

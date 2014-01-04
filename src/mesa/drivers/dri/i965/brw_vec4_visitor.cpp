@@ -2696,6 +2696,24 @@ vec4_visitor::visit(ir_if *ir)
 }
 
 void
+vec4_visitor::visit(ir_phi_if *)
+{
+   assert(!"not reached");
+}
+
+void
+vec4_visitor::visit(ir_phi_loop_begin *)
+{
+   assert(!"not reached");
+}
+
+void
+vec4_visitor::visit(ir_phi_loop_end *)
+{
+   assert(!"not reached");
+}
+
+void
 vec4_visitor::visit(ir_emit_vertex *)
 {
    assert(!"not reached");

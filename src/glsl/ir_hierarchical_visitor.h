@@ -105,6 +105,17 @@ public:
     * that couldn't just be done in the visit method.
     */
    virtual ir_visitor_status visit(class ir_dereference_variable *);
+
+   /**
+    * In order to be consistent with ir_dereference_variable being treated as a
+    * leaf, phi nodes are treated as a leaf as well, even though it defines an
+    * ir_variable.
+    */
+   virtual ir_visitor_status visit(class ir_phi *);
+   virtual ir_visitor_status visit(class ir_phi_if *);
+   virtual ir_visitor_status visit(class ir_phi_loop_begin *);
+   virtual ir_visitor_status visit(class ir_phi_loop_end *);
+
    /*@}*/
 
    /**

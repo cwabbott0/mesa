@@ -261,6 +261,9 @@ public:
    virtual void visit(ir_discard *);
    virtual void visit(ir_texture *);
    virtual void visit(ir_if *);
+   virtual void visit(ir_phi_if *);
+   virtual void visit(ir_phi_loop_begin *);
+   virtual void visit(ir_phi_loop_end *);
    virtual void visit(ir_emit_vertex *);
    virtual void visit(ir_end_primitive *);
    /*@}*/
@@ -2227,7 +2230,25 @@ ir_to_mesa_visitor::visit(ir_if *ir)
 }
 
 void
-ir_to_mesa_visitor::visit(ir_emit_vertex *)
+ir_to_mesa_visitor::visit(ir_phi_if *ir)
+{
+   assert(!"Should not get here.");
+}
+
+void
+ir_to_mesa_visitor::visit(ir_phi_loop_begin *ir)
+{
+   assert(!"Should not get here.");
+}
+
+void
+ir_to_mesa_visitor::visit(ir_phi_loop_end *ir)
+{
+   assert(!"Should not get here.");
+}
+
+void
+ir_to_mesa_visitor::visit(ir_emit_vertex *ir)
 {
    assert(!"Geometry shaders not supported.");
 }

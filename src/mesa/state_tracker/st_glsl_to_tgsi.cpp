@@ -380,6 +380,9 @@ public:
    virtual void visit(ir_discard *);
    virtual void visit(ir_texture *);
    virtual void visit(ir_if *);
+   virtual void visit(ir_phi_if *);
+   virtual void visit(ir_phi_loop_begin *);
+   virtual void visit(ir_phi_loop_end *);
    virtual void visit(ir_emit_vertex *);
    virtual void visit(ir_end_primitive *);
    /*@}*/
@@ -3121,6 +3124,25 @@ glsl_to_tgsi_visitor::visit(ir_if *ir)
    }
 
    if_inst = emit(ir->condition, TGSI_OPCODE_ENDIF);
+}
+
+
+void
+glsl_to_tgsi_visitor::visit(ir_phi_if *ir)
+{
+   assert(!"SSA not supported");
+}
+
+void
+glsl_to_tgsi_visitor::visit(ir_phi_loop_begin *ir)
+{
+   assert(!"SSA not supported");
+}
+
+void
+glsl_to_tgsi_visitor::visit(ir_phi_loop_end *ir)
+{
+   assert(!"SSA not supported");
 }
 
 

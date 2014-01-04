@@ -1238,6 +1238,28 @@ ir_loop::ir_loop()
 }
 
 
+ir_phi_if::ir_phi_if(ir_variable *dest, ir_variable *if_src,
+		     ir_variable *else_src)
+   : ir_phi(dest), if_src(if_src), else_src(else_src)
+{
+   this->ir_type = ir_type_phi_if;
+}
+
+
+ir_phi_loop_begin::ir_phi_loop_begin(ir_variable* dest, ir_variable* enter_src,
+				     ir_variable* repeat_src)
+   : ir_phi(dest), enter_src(enter_src), repeat_src(repeat_src)
+{
+   this->ir_type = ir_type_phi_loop_begin;
+}
+
+
+ir_phi_loop_end::ir_phi_loop_end(ir_variable *dest) : ir_phi(dest)
+{
+   this->ir_type = ir_type_phi_loop_end;
+}
+
+
 ir_dereference_variable::ir_dereference_variable(ir_variable *var)
 {
    assert(var != NULL);
@@ -1568,6 +1590,7 @@ ir_variable::ir_variable(const struct glsl_type *type, const char *name,
    this->data.image.coherent = false;
    this->data.image._volatile = false;
    this->data.image.restrict_flag = false;
+   this->ssa_owner = NULL;
 
    if (type != NULL) {
       if (type->base_type == GLSL_TYPE_SAMPLER)
@@ -1741,11 +1764,18 @@ steal_memory(ir_instruction *ir, void *new_ctx)
 {
    ir_variable *var = ir->as_variable();
    ir_constant *constant = ir->as_constant();
+   ir_dereference_variable *deref = ir->as_dereference_variable();
+   ir_phi *phi = ir->as_phi();
+   ir_phi_loop_begin *phi_loop_begin = ir->as_phi_loop_begin();
+   ir_phi_loop_end *phi_loop_end = ir->as_phi_loop_end();
    if (var != NULL && var->constant_value != NULL)
       steal_memory(var->constant_value, ir);
 
    if (var != NULL && var->constant_initializer != NULL)
       steal_memory(var->constant_initializer, ir);
+
+   if (deref != NULL && deref->var->data.mode == ir_var_temporary_ssa)
+      steal_memory(deref->var, ir);
 
    /* The components of aggregate constants are not visited by the normal
     * visitor, so steal their values by hand.
@@ -1760,6 +1790,21 @@ steal_memory(ir_instruction *ir, void *new_ctx)
 	 for (unsigned int i = 0; i < constant->type->length; i++) {
 	    steal_memory(constant->array_elements[i], ir);
 	 }
+      }
+   }
+
+   if (phi != NULL)
+      steal_memory(phi->dest, new_ctx);
+
+   if (phi_loop_begin != NULL) {
+      foreach_list(n, &phi_loop_begin->continue_srcs) {
+	 ralloc_steal(new_ctx, n);
+      }
+   }
+
+   if (phi_loop_end != NULL) {
+      foreach_list(n, &phi_loop_end->break_srcs) {
+	 ralloc_steal(new_ctx, n);
       }
    }
 

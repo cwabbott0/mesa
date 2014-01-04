@@ -273,6 +273,10 @@ public:
    void visit(ir_call *ir);
    void visit(ir_function *ir);
    void visit(ir_function_signature *ir);
+   void visit(ir_phi *ir);
+   void visit(ir_phi_if *ir);
+   void visit(ir_phi_loop_begin *ir);
+   void visit(ir_phi_loop_end *ir);
    void visit(ir_emit_vertex *);
    void visit(ir_end_primitive *);
 
