@@ -206,6 +206,7 @@ ir_swizzle *swizzle_x(operand a);
 ir_swizzle *swizzle_y(operand a);
 ir_swizzle *swizzle_z(operand a);
 ir_swizzle *swizzle_w(operand a);
+ir_swizzle *swizzle_component(operand a, int component);
 ir_swizzle *swizzle_xy(operand a);
 ir_swizzle *swizzle_xyz(operand a);
 ir_swizzle *swizzle_xyzw(operand a);
