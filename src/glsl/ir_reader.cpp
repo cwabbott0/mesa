@@ -23,6 +23,7 @@
 
 #include "ir_reader.h"
 #include "glsl_parser_extras.h"
+#include "main/hash_table.h"
 #include "glsl_types.h"
 #include "s_expression.h"
 
@@ -33,12 +34,15 @@ namespace {
 class ir_reader {
 public:
    ir_reader(_mesa_glsl_parse_state *);
+   ~ir_reader();
 
    void read(exec_list *instructions, const char *src, bool scan_for_protos);
 
 private:
    void *mem_ctx;
    _mesa_glsl_parse_state *state;
+   
+   struct hash_table *breaks, *continues;
 
    void ir_read_error(s_expression *, const char *fmt, ...);
 
@@ -47,12 +51,25 @@ private:
    void scan_for_prototypes(exec_list *, s_expression *);
    ir_function *read_function(s_expression *, bool skip_body);
    void read_function_sig(ir_function *, s_expression *, bool skip_body);
+   
+   ir_variable *create_ssa_variable(const char *, const struct glsl_type *);
+   ir_loop_jump *create_continue(const char *);
 
    void read_instructions(exec_list *, s_expression *, ir_loop *);
    ir_instruction *read_instruction(s_expression *, ir_loop *);
+   ir_loop_jump *read_break(s_expression *);
+   ir_loop_jump *read_continue(s_expression *);
    ir_variable *read_declaration(s_expression *);
    ir_if *read_if(s_expression *, ir_loop *);
+   void read_if_phi_nodes(exec_list *, s_expression *);
+   ir_phi_if *read_phi_if(s_expression *);
    ir_loop *read_loop(s_expression *);
+   void read_begin_loop_phi_nodes(s_expression *, exec_list *);
+   void read_end_loop_phi_nodes(s_expression *, exec_list *);
+   ir_phi_loop_begin *read_phi_loop_begin(s_expression *);
+   ir_phi_jump_src *read_continue_src(s_expression *, const glsl_type *);
+   ir_phi_loop_end *read_phi_loop_end(s_expression *);
+   ir_phi_jump_src *read_break_src(s_expression *);
    ir_call *read_call(s_expression *);
    ir_return *read_return(s_expression *);
    ir_rvalue *read_rvalue(s_expression *);
@@ -73,6 +90,14 @@ private:
 ir_reader::ir_reader(_mesa_glsl_parse_state *state) : state(state)
 {
    this->mem_ctx = state;
+   this->breaks = _mesa_hash_table_create(NULL, _mesa_key_string_equal);
+   this->continues = _mesa_hash_table_create(NULL, _mesa_key_string_equal);
+}
+
+ir_reader::~ir_reader()
+{
+   _mesa_hash_table_destroy(this->breaks, NULL);
+   _mesa_hash_table_destroy(this->continues, NULL);
 }
 
 void
@@ -338,14 +363,6 @@ ir_reader::read_instructions(exec_list *instructions, s_expression *expr,
 ir_instruction *
 ir_reader::read_instruction(s_expression *expr, ir_loop *loop_ctx)
 {
-   s_symbol *symbol = SX_AS_SYMBOL(expr);
-   if (symbol != NULL) {
-      if (strcmp(symbol->value(), "break") == 0 && loop_ctx != NULL)
-	 return new(mem_ctx) ir_loop_jump(ir_loop_jump::jump_break);
-      if (strcmp(symbol->value(), "continue") == 0 && loop_ctx != NULL)
-	 return new(mem_ctx) ir_loop_jump(ir_loop_jump::jump_continue);
-   }
-
    s_list *list = SX_AS_LIST(expr);
    if (list == NULL || list->subexpressions.is_empty()) {
       ir_read_error(expr, "Invalid instruction.\n");
@@ -367,6 +384,10 @@ ir_reader::read_instruction(s_expression *expr, ir_loop *loop_ctx)
       inst = read_if(list, loop_ctx);
    } else if (strcmp(tag->value(), "loop") == 0) {
       inst = read_loop(list);
+   } else if (strcmp(tag->value(), "break") == 0) {
+      inst = read_break(list);
+   } else if (strcmp(tag->value(), "continue") == 0) {
+      inst = read_continue(list);
    } else if (strcmp(tag->value(), "call") == 0) {
       inst = read_call(list);
    } else if (strcmp(tag->value(), "return") == 0) {
@@ -385,6 +406,57 @@ ir_reader::read_instruction(s_expression *expr, ir_loop *loop_ctx)
    return inst;
 }
 
+ir_loop_jump *
+ir_reader::read_break(s_expression *expr)
+{
+   s_symbol *s_name;
+   
+   s_pattern pat[] = { "break", s_name };
+   if (!MATCH(expr, pat)) {
+      ir_read_error(expr, "expected (break <name>)");
+      return NULL;
+   }
+   
+   ir_loop_jump *jump = new(mem_ctx) ir_loop_jump(ir_loop_jump::jump_break);
+   _mesa_hash_table_insert(breaks, _mesa_hash_string(s_name->value()),
+                           s_name->value(), jump);
+   return jump;
+}
+
+ir_loop_jump *
+ir_reader::read_continue(s_expression *expr)
+{
+   s_symbol *s_name;
+   
+   s_pattern pat[] = { "continue", s_name };
+   if (!MATCH(expr, pat)) {
+      ir_read_error(expr, "expected (continue <name>)");
+      return NULL;
+   }
+   
+   return create_continue(s_name->value());
+}
+
+/*
+ * Finds the pre-existing continue with the given name, or creates a new
+ * one if none exists.
+ */
+
+ir_loop_jump *
+ir_reader::create_continue(const char *s)
+{
+   struct hash_entry *entry = _mesa_hash_table_search(this->continues,
+                                                      _mesa_hash_string(s), s);
+   
+   if (entry)
+      return (ir_loop_jump *) entry->data;
+   
+   ir_loop_jump *jump =
+      new(this->mem_ctx) ir_loop_jump(ir_loop_jump::jump_continue);
+   _mesa_hash_table_insert(this->breaks, _mesa_hash_string(s), s, jump);
+   return jump;
+}
+
 ir_variable *
 ir_reader::read_declaration(s_expression *expr)
 {
@@ -397,13 +469,24 @@ ir_reader::read_declaration(s_expression *expr)
       ir_read_error(expr, "expected (declare (<qualifiers>) <type> <name>)");
       return NULL;
    }
+   
+   ir_variable *var = state->symbols->get_variable(s_name->value());
+   if (var) {
+      /*
+       * If a variable is used in a phi node before it is defined, we will
+       * infer the type of the variable and create it beforehand in order to
+       * avoid having to do two passes, so here just return the original
+       * variable.
+       */
+      
+      return var;
+   }
 
    const glsl_type *type = read_type(s_type);
    if (type == NULL)
       return NULL;
 
-   ir_variable *var = new(mem_ctx) ir_variable(type, s_name->value(),
-					       ir_var_auto);
+   var = new(mem_ctx) ir_variable(type, s_name->value(), ir_var_auto);
 
    foreach_list(n, &s_quals->subexpressions) {
       s_symbol *qualifier = SX_AS_SYMBOL(n);
@@ -437,6 +520,8 @@ ir_reader::read_declaration(s_expression *expr)
 	 var->data.mode = ir_var_function_inout;
       } else if (strcmp(qualifier->value(), "temporary") == 0) {
 	 var->data.mode = ir_var_temporary;
+      } else if (strcmp(qualifier->value(), "temporary_ssa") == 0) {
+	 var->data.mode = ir_var_temporary_ssa;
       } else if (strcmp(qualifier->value(), "smooth") == 0) {
 	 var->data.interpolation = INTERP_QUALIFIER_SMOOTH;
       } else if (strcmp(qualifier->value(), "flat") == 0) {
@@ -462,10 +547,12 @@ ir_reader::read_if(s_expression *expr, ir_loop *loop_ctx)
    s_expression *s_cond;
    s_expression *s_then;
    s_expression *s_else;
+   s_expression *s_phi_nodes;
 
-   s_pattern pat[] = { "if", s_cond, s_then, s_else };
+   s_pattern pat[] = { "if", s_cond, s_then, s_else, s_phi_nodes };
    if (!MATCH(expr, pat)) {
-      ir_read_error(expr, "expected (if <condition> (<then>...) (<else>...))");
+      ir_read_error(expr, "expected (if <condition> (<then>...) (<else>...) \
+                    (<phi nodes>...))");
       return NULL;
    }
 
@@ -479,6 +566,7 @@ ir_reader::read_if(s_expression *expr, ir_loop *loop_ctx)
 
    read_instructions(&iff->then_instructions, s_then, loop_ctx);
    read_instructions(&iff->else_instructions, s_else, loop_ctx);
+   read_if_phi_nodes(&iff->phi_nodes, s_phi_nodes);
    if (state->error) {
       delete iff;
       iff = NULL;
@@ -486,28 +574,306 @@ ir_reader::read_if(s_expression *expr, ir_loop *loop_ctx)
    return iff;
 }
 
+void
+ir_reader::read_if_phi_nodes(exec_list *phi_list, s_expression *expr)
+{
+   s_list* list = SX_AS_LIST(expr);
+   if (!list) {
+      ir_read_error(expr, "expected (<phi nodes>...); found an atom.");
+      return;
+   }
+   
+   foreach_list(n, &list->subexpressions) {
+      s_expression *sub = (s_expression *) n;
+      ir_phi_if *phi = read_phi_if(sub);
+      if (!phi) {
+         ir_read_error(NULL, "while reading phi nodes of (if ...)");
+         return;
+      }
+      phi_list->push_tail(phi);
+   }
+}
+
+ir_phi_if *
+ir_reader::read_phi_if(s_expression *expr)
+{
+   s_expression *s_dest;
+   s_symbol *s_if_src;
+   s_symbol *s_else_src;
+   
+   s_pattern pat[] = { "phi_if", s_dest, s_if_src, s_else_src };
+   if (!MATCH(expr, pat)) {
+      ir_read_error(expr, "expected (phi_if (<dest>...) if_src else_src)");
+      return NULL;
+   }
+   
+   ir_variable *dest = read_declaration(s_dest);
+   if (dest == NULL)
+      return NULL;
+   
+   ir_variable *if_src = state->symbols->get_variable(s_if_src->value());
+   if (if_src == NULL) {
+      ir_read_error(expr, "undeclared variable: %s", s_if_src->value());
+      return NULL;
+   }
+   
+   ir_variable *else_src = state->symbols->get_variable(s_else_src->value());
+   if (else_src == NULL) {
+      ir_read_error(expr, "undeclared variable: %s", s_else_src->value());
+      return NULL;
+   }
+   
+   return new(mem_ctx) ir_phi_if(dest, if_src, else_src);
+}
 
 ir_loop *
 ir_reader::read_loop(s_expression *expr)
 {
    s_expression *s_body;
+   s_expression *s_begin_phi_nodes;
+   s_expression *s_end_phi_nodes;
 
-   s_pattern loop_pat[] = { "loop", s_body };
+   s_pattern loop_pat[] = { "loop", s_begin_phi_nodes, s_body, s_end_phi_nodes };
    if (!MATCH(expr, loop_pat)) {
-      ir_read_error(expr, "expected (loop <body>)");
+      ir_read_error(expr, "expected (loop <phi nodes> <body> <phi nodes>)");
       return NULL;
    }
 
    ir_loop *loop = new(mem_ctx) ir_loop;
+   
+   read_begin_loop_phi_nodes(s_begin_phi_nodes, &loop->begin_phi_nodes);
+   if (state->error) {
+      delete loop;
+      return NULL;
+   }
 
    read_instructions(&loop->body_instructions, s_body, loop);
    if (state->error) {
       delete loop;
-      loop = NULL;
+      return NULL;
    }
+   
+   read_end_loop_phi_nodes(s_end_phi_nodes, &loop->end_phi_nodes);
+   if (state->error) {
+      delete loop;
+      return NULL;
+   }
+   
    return loop;
 }
 
+void
+ir_reader::read_begin_loop_phi_nodes(s_expression *expr, exec_list *phi_list)
+{
+   s_list* list = SX_AS_LIST(expr);
+   if (!list) {
+      ir_read_error(expr, "expected (<phi nodes>...)");
+      return;
+   }
+   
+   foreach_list(n, &list->subexpressions) {
+      s_expression *sub = (s_expression *) n;
+      ir_phi_loop_begin *phi = read_phi_loop_begin(sub);
+      if (!phi) {
+         return;
+      }
+      phi_list->push_tail(phi);
+   }
+}
+
+void
+ir_reader::read_end_loop_phi_nodes(s_expression *expr, exec_list *phi_list)
+{
+   s_list *list = SX_AS_LIST(expr);
+   if (!list) {
+      ir_read_error(expr, "expected (<phi nodes>...)");
+      return;
+   }
+   
+   foreach_list(n, &list->subexpressions) {
+      s_expression *sub = (s_expression *) n;
+      ir_phi_loop_end *phi = read_phi_loop_end(sub);
+      if (!phi) {
+         return;
+      }
+      phi_list->push_tail(phi);
+   }
+}
+
+ir_phi_loop_begin *
+ir_reader::read_phi_loop_begin(s_expression *expr)
+{
+   s_expression *s_dest;
+   s_symbol *s_enter_src, *s_repeat_src;
+   s_list *s_continue_srcs;
+   
+   s_pattern pat[] = {
+      "phi_loop_begin", s_dest, s_enter_src, s_repeat_src, s_continue_srcs };
+   
+   if (!MATCH(expr, pat)) {
+      ir_read_error(expr, "expected (phi_loop_begin <dest> <enter source> \
+                    <repeat source> (<continue sources>...)");
+      return NULL;
+   }
+   
+   ir_variable *dest = read_declaration(s_dest);
+   if (dest == NULL)
+      return NULL;
+   
+   ir_variable *enter_src = state->symbols->get_variable(s_enter_src->value());
+   if (enter_src == NULL) {
+      ir_read_error(expr, "undeclared variable: %s", s_enter_src->value());
+      return NULL;
+   }
+   
+   ir_variable *repeat_src = state->symbols->get_variable(s_repeat_src->value());
+   if (repeat_src == NULL) {
+      ir_read_error(expr, "undeclared variable: %s", s_repeat_src->value());
+      return NULL;
+   }
+   
+   ir_phi_loop_begin *phi = new(mem_ctx) ir_phi_loop_begin(dest, enter_src,
+                                                           repeat_src);
+   
+   foreach_list(n, &s_continue_srcs->subexpressions) {
+      s_expression *sub = (s_expression *) n;
+      ir_phi_jump_src *src = read_continue_src(sub, dest->type);
+      if (!src) {
+         delete phi;
+         return NULL;
+      }
+      
+      phi->continue_srcs.push_tail(src);
+   }
+   
+   return phi;
+}
+
+ir_phi_jump_src *
+ir_reader::read_continue_src(s_expression *expr, const glsl_type *dest_type)
+{
+   s_symbol *s_continue_name;
+   s_symbol *s_src_name;
+   
+   s_pattern pat[] = { "phi_jump_src", s_continue_name, s_src_name };
+   
+   if (!MATCH(expr, pat)) {
+      ir_read_error(expr, "expected (phi_jump_src <continue name> \
+                    <source name>)");
+      return NULL;
+   }
+   
+   ir_loop_jump *jump = create_continue(s_continue_name->value());
+   ir_variable *src = create_ssa_variable(s_src_name->value(), dest_type);
+   
+   ir_phi_jump_src *jump_src = new(mem_ctx) ir_phi_jump_src();
+   jump_src->jump = jump;
+   jump_src->src = src;
+   return jump_src;
+}
+
+/*
+ * Looks for an SSA variable with the given name, and if it cannot be found
+ * create one with the given type.
+ */
+
+ir_variable *
+ir_reader::create_ssa_variable(const char *name, const struct glsl_type *type)
+{
+   ir_variable *var = state->symbols->get_variable(name);
+   if (var)
+   {
+      if (var->data.mode != ir_var_temporary_ssa)
+      {
+         ir_read_error(NULL, "SSA variable already defined as a non-SSA \
+                       variable");
+         return NULL;
+      }
+      
+      if (var->type != type)
+      {
+         ir_read_error(NULL, "SSA variable definition and phi node use have \
+                       conflicting types");
+         return NULL;
+      }
+      
+      return var;
+   }
+   
+   const char *new_name = ralloc_strdup(this->mem_ctx, name);
+   var = new(this->mem_ctx) ir_variable(type, new_name, ir_var_temporary_ssa);
+   state->symbols->add_variable(var);
+   return var;
+}
+
+ir_phi_loop_end *
+ir_reader::read_phi_loop_end(s_expression *expr)
+{
+   s_expression *s_dest;
+   s_list *s_break_srcs;
+   
+   s_pattern pat[] = { "phi_loop_end", s_dest, s_break_srcs };
+   
+   if (!MATCH(expr, pat)) {
+      ir_read_error(expr, "expected (phi_loop_end <dest> (<sources>...))");
+      return NULL;
+   }
+   
+   ir_variable *dest = read_declaration(s_dest);
+   if (dest == NULL)
+      return NULL;
+   
+   ir_phi_loop_end *phi = new(mem_ctx) ir_phi_loop_end(dest);
+   
+   foreach_list(n, &s_break_srcs->subexpressions) {
+      s_expression *sub = (s_expression *) n;
+      ir_phi_jump_src *src = read_break_src(sub);
+      if (!src) {
+         delete phi;
+         return NULL;
+      }
+      
+      phi->break_srcs.push_tail(src);
+   }
+   
+   return phi;
+}
+
+ir_phi_jump_src *
+ir_reader::read_break_src(s_expression *expr)
+{
+   s_symbol *s_break_name;
+   s_symbol *s_src_name;
+   
+   s_pattern pat[] = { "phi_jump_src", s_break_name, s_src_name };
+   
+   if (!MATCH(expr, pat)) {
+      ir_read_error(expr, "expected (phi_jump_src <break name> <source name>)");
+      return NULL;
+   }
+   
+   struct hash_entry *entry =
+      _mesa_hash_table_search(breaks, _mesa_hash_string(s_break_name->value()),
+                              s_break_name->value());
+   
+   if (entry == NULL) {
+      ir_read_error(expr, "undknown break name %s", s_break_name->value());
+      return NULL;
+   }
+   
+   ir_loop_jump *jump = (ir_loop_jump *) entry->data;
+   
+   ir_variable *src = state->symbols->get_variable(s_src_name->value());
+   if (src == NULL) {
+      ir_read_error(expr, "undeclared variable %s", s_src_name->value());
+      return NULL;
+   }
+   
+   ir_phi_jump_src *jump_src = new(mem_ctx) ir_phi_jump_src();
+   jump_src->jump = jump;
+   jump_src->src = src;
+   return jump_src;
+}
 
 ir_return *
 ir_reader::read_return(s_expression *expr)
@@ -874,7 +1240,9 @@ ir_dereference_variable *
 ir_reader::read_var_ref(s_expression *expr)
 {
    s_symbol *s_var;
+   s_expression *s_decl;
    s_pattern var_pat[] = { "var_ref", s_var };
+   s_pattern ssa_pat[] = { "var_ref", s_decl };
 
    if (MATCH(expr, var_pat)) {
       ir_variable *var = state->symbols->get_variable(s_var->value());
@@ -884,6 +1252,16 @@ ir_reader::read_var_ref(s_expression *expr)
       }
       return new(mem_ctx) ir_dereference_variable(var);
    }
+
+   /* SSA variables are declared in the lhs dereference */
+   if (MATCH(expr, ssa_pat)) {
+      ir_variable *var = read_declaration(s_decl);
+      if (var == NULL) {
+	 return NULL;
+      }
+      return new(mem_ctx) ir_dereference_variable(var);
+   }
+
    return NULL;
 }
 
