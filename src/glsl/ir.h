@@ -139,6 +139,7 @@ public:
    virtual class ir_constant *          as_constant()         { return NULL; }
    virtual class ir_discard *           as_discard()          { return NULL; }
    virtual class ir_jump *              as_jump()             { return NULL; }
+   virtual class ir_loop_jump *         as_loop_jump()        { return NULL; }
    /*@}*/
 
    /**
@@ -1650,6 +1651,11 @@ public:
    }
 
    virtual ir_loop_jump *clone(void *mem_ctx, struct hash_table *) const;
+
+   virtual ir_loop_jump *as_loop_jump()
+   {
+      return this;
+   }
 
    virtual void accept(ir_visitor *v)
    {
