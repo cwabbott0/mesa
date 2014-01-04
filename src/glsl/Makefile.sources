@@ -100,6 +100,7 @@ LIBGLSL_FILES = \
 	$(GLSL_SRCDIR)/opt_redundant_jumps.cpp \
 	$(GLSL_SRCDIR)/opt_structure_splitting.cpp \
 	$(GLSL_SRCDIR)/opt_swizzle_swizzle.cpp \
+	$(GLSL_SRCDIR)/opt_to_ssa.cpp \
 	$(GLSL_SRCDIR)/opt_tree_grafting.cpp \
 	$(GLSL_SRCDIR)/opt_vectorize.cpp \
 	$(GLSL_SRCDIR)/s_expression.cpp \

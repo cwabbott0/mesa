@@ -65,6 +65,8 @@ enum lower_packing_builtins_op {
    LOWER_UNPACK_UNORM_4x8               = 0x0800
 };
 
+void convert_to_ssa(exec_list *instructions);
+
 bool do_common_optimization(exec_list *ir, bool linked,
 			    bool uniform_locations_assigned,
 			    unsigned max_unroll_iterations,
