@@ -389,7 +389,7 @@ ir_assignment::clone(void *mem_ctx, struct hash_table *ht) const
    cloned->write_mask = this->write_mask;
    
    if (new_var) {
-      new_var->ssa_owner = ret;
+      new_var->ssa_owner = cloned;
    }
    
    return cloned;
