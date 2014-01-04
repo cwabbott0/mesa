@@ -124,6 +124,7 @@ ir_assignment *assign(deref lhs, operand rhs);
 ir_assignment *assign(deref lhs, operand rhs, int writemask);
 ir_assignment *assign(deref lhs, operand rhs, operand condition);
 ir_assignment *assign(deref lhs, operand rhs, operand condition, int writemask);
+ir_assignment *ssa_assign(const char *name, operand rhs);
 
 ir_return *ret(operand retval);
 

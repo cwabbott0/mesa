@@ -76,6 +76,20 @@ assign(deref lhs, operand rhs, operand condition)
    return assign(lhs, rhs, condition, (1 << lhs.val->type->vector_elements) - 1);
 }
 
+ir_assignment *
+ssa_assign(const char *name, operand rhs)
+{
+   void *mem_ctx = ralloc_parent(rhs.val);
+
+   ir_variable *var = new(mem_ctx) ir_variable(rhs.val->type, name,
+					       ir_var_temporary_ssa);
+
+   ir_assignment *ret = assign(var, rhs);
+   var->ssa_owner = ret;
+   return ret;
+}
+
+
 ir_return *
 ret(operand retval)
 {
