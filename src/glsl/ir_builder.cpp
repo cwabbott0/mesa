@@ -166,6 +166,12 @@ swizzle_xy(operand a)
 }
 
 ir_swizzle *
+swizzle_component(operand a, int component)
+{
+   return swizzle(a, MAKE_SWIZZLE4(component, component, component, component), 1);
+}
+
+ir_swizzle *
 swizzle_xyz(operand a)
 {
    return swizzle(a, SWIZZLE_XYZW, 3);
