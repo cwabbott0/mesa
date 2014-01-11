@@ -1501,6 +1501,9 @@ ir_expression::constant_expression_value(struct hash_table *variable_context)
 	 case GLSL_TYPE_FLOAT:
 	    data.f[c] = op[c]->value.f[0];
 	    break;
+	 case GLSL_TYPE_BOOL:
+	    data.b[c] = op[c]->value.b[0];
+	    break;
 	 default:
 	    assert(0);
 	 }
