@@ -96,13 +96,13 @@ def return_(value = None):
     else:
         return [['return']]
 
-def break_():
+def break_(name):
     """Create a break statement."""
-    return ['break']
+    return [['break', name]]
 
-def continue_():
+def continue_(name):
     """Create a continue statement."""
-    return ['continue']
+    return [['continue', name]]
 
 def simple_if(var_name, then_statements, else_statements = None):
     """Create a statement of the form
@@ -119,14 +119,14 @@ def simple_if(var_name, then_statements, else_statements = None):
         else_statements = []
     check_sexp(then_statements)
     check_sexp(else_statements)
-    return [['if', gt_zero(var_name), then_statements, else_statements]]
+    return [['if', gt_zero(var_name), then_statements, else_statements, []]]
 
 def loop(statements):
     """Create a loop containing the given statements as its loop
     body.
     """
     check_sexp(statements)
-    return [['loop', statements]]
+    return [['loop', [], statements, []]]
 
 def declare_temp(var_type, var_name):
     """Create a declaration of the form
@@ -234,14 +234,14 @@ def if_execute_flag(statements):
     execute_flag is True.
     """
     check_sexp(statements)
-    return [['if', ['var_ref', 'execute_flag'], statements, []]]
+    return [['if', ['var_ref', 'execute_flag'], statements, [], []]]
 
 def if_not_return_flag(statements):
     """Wrap statements in an if test so that they will only execute if
     return_flag is False.
     """
     check_sexp(statements)
-    return [['if', ['var_ref', 'return_flag'], [], statements]]
+    return [['if', ['var_ref', 'return_flag'], [], statements, []]]
 
 def final_return():
     """Create the return statement that lower_jumps.cpp places at the
@@ -249,11 +249,11 @@ def final_return():
     """
     return [['return', ['var_ref', 'return_value']]]
 
-def final_break():
+def final_break(name):
     """Create the conditional break statement that lower_jumps.cpp
     places at the end of a function when lowering breaks.
     """
-    return [['if', ['var_ref', 'break_flag'], break_(), []]]
+    return [['if', ['var_ref', 'break_flag'], break_(name), [], []]]
 
 def bash_quote(*args):
     """Quote the arguments appropriately so that bash will understand
@@ -436,7 +436,7 @@ def test_lower_pulled_out_jump():
     """
     input_sexp = make_test_case('main', 'void', (
             complex_if('a', return_()) +
-            loop(simple_if('b', simple_if('c', break_(), continue_()),
+            loop(simple_if('b', simple_if('c', break_("break@1"), continue_("cont@1")),
                            return_())) +
             assign_x('d', const_float(1))
             ))
@@ -449,9 +449,9 @@ def test_lower_pulled_out_jump():
             declare_return_flag() +
             complex_if('a', lowered_return()) +
             if_execute_flag(
-                loop(simple_if('b', simple_if('c', [], continue_()),
+                loop(simple_if('b', simple_if('c', [], continue_("cont@1")),
                                lowered_return_simple()) +
-                     break_()) +
+                     break_("break@1")) +
                 if_not_return_flag(assign_x('d', const_float(1))))
             ))
     create_test_case(doc_string, input_sexp, expected_sexp, 'lower_pulled_out_jump',
@@ -462,7 +462,7 @@ def test_lower_breaks_1():
     it, it should not be lowered."""
     input_sexp = make_test_case('main', 'void', (
             loop(assign_x('a', const_float(1)) +
-                 break_())
+                 break_("break@1"))
             ))
     expected_sexp = input_sexp
     create_test_case(doc_string, input_sexp, expected_sexp, 'lower_breaks_1', lower_break=True)
@@ -473,7 +473,7 @@ def test_lower_breaks_2():
     """
     input_sexp = make_test_case('main', 'void', (
             loop(assign_x('a', const_float(1)) +
-                 simple_if('b', break_()))
+                 simple_if('b', break_("break@1")))
             ))
     expected_sexp = input_sexp
     create_test_case(doc_string, input_sexp, expected_sexp, 'lower_breaks_2', lower_break=True)
@@ -486,7 +486,7 @@ def test_lower_breaks_3():
     input_sexp = make_test_case('main', 'void', (
             loop(assign_x('a', const_float(1)) +
                  simple_if('b', (assign_x('c', const_float(1)) +
-                                 break_())))
+                                 break_("break@1"))))
             ))
     expected_sexp = input_sexp
     create_test_case(doc_string, input_sexp, expected_sexp, 'lower_breaks_3', lower_break=True)
@@ -497,7 +497,7 @@ def test_lower_breaks_4():
     """
     input_sexp = make_test_case('main', 'void', (
             loop(assign_x('a', const_float(1)) +
-                 simple_if('b', [], break_()))
+                 simple_if('b', [], break_("break@1")))
             ))
     expected_sexp = input_sexp
     create_test_case(doc_string, input_sexp, expected_sexp, 'lower_breaks_4', lower_break=True)
@@ -510,7 +510,7 @@ def test_lower_breaks_5():
     input_sexp = make_test_case('main', 'void', (
             loop(assign_x('a', const_float(1)) +
                  simple_if('b', [], (assign_x('c', const_float(1)) +
-                                     break_())))
+                                     break_("break@1"))))
             ))
     expected_sexp = input_sexp
     create_test_case(doc_string, input_sexp, expected_sexp, 'lower_breaks_5', lower_break=True)
@@ -522,9 +522,9 @@ def test_lower_breaks_6():
     of the loop after the final break is added.
     """
     input_sexp = make_test_case('main', 'void', (
-            loop(simple_if('a', (complex_if('b', continue_()) +
-                                 complex_if('c', break_()))) +
-                 break_())
+            loop(simple_if('a', (complex_if('b', continue_("cont@1")) +
+                                 complex_if('c', break_("break@1")))) +
+                 break_("break@2"))
             ))
     expected_sexp = make_test_case('main', 'void', (
             declare_break_flag() +
@@ -535,7 +535,7 @@ def test_lower_breaks_6():
                      if_execute_flag(
                             complex_if('c', lowered_break())))) +
                  if_execute_flag(lowered_break_simple()) +
-                 final_break())
+                 final_break("break@1"))
             ))
     create_test_case(doc_string, input_sexp, expected_sexp, 'lower_breaks_6',
                      lower_break=True, lower_continue=True)
@@ -547,15 +547,15 @@ def test_lower_guarded_conditional_break():
     then the break needs to be lowered.
     """
     input_sexp = make_test_case('main', 'void', (
-            loop(complex_if('a', continue_()) +
-                 simple_if('b', break_()))
+            loop(complex_if('a', continue_("cont@1")) +
+                 simple_if('b', break_("break@1")))
             ))
     expected_sexp = make_test_case('main', 'void', (
             declare_break_flag() +
             loop(declare_execute_flag() +
                  complex_if('a', lowered_continue()) +
                  if_execute_flag(simple_if('b', lowered_break())) +
-                 final_break())
+                 final_break("break@1"))
             ))
     create_test_case(doc_string, input_sexp, expected_sexp, 'lower_guarded_conditional_break',
                      lower_break=True, lower_continue=True)
@@ -566,7 +566,7 @@ def test_remove_continue_at_end_of_loop():
     """
     input_sexp = make_test_case('main', 'void', (
             loop(assign_x('a', const_float(1)) +
-                 continue_())
+                 continue_("cont@1"))
             ))
     expected_sexp = make_test_case('main', 'void', (
             loop(assign_x('a', const_float(1)))
@@ -586,7 +586,7 @@ def test_lower_return_void_at_end_of_loop():
             declare_return_flag() +
             loop(assign_x('a', const_float(1)) +
                  lowered_return_simple() +
-                 break_()) +
+                 break_("break@1")) +
             if_not_return_flag(assign_x('b', const_float(2)))
             ))
     create_test_case(doc_string, input_sexp, input_sexp, 'return_void_at_end_of_loop_lower_nothing')
@@ -611,7 +611,7 @@ def test_lower_return_non_void_at_end_of_loop():
             declare_return_flag() +
             loop(assign_x('a', const_float(1)) +
                  lowered_return_simple(const_float(2)) +
-                 break_()) +
+                 break_("break@1")) +
             if_not_return_flag(assign_x('b', const_float(3)) +
                                lowered_return(const_float(4))) +
             final_return()
