@@ -16,6 +16,7 @@ LIBGLCPP_GENERATED_FILES = \
 NIR_FILES = \
 	$(GLSL_SRCDIR)/nir/nir.c \
 	$(GLSL_SRCDIR)/nir/nir_intrinsics.c \
+	$(GLSL_SRCDIR)/nir/nir_lower_variables_scalar.c \
 	$(GLSL_SRCDIR)/nir/nir_opcodes.c \
 	$(GLSL_SRCDIR)/nir/nir_print.c \
 	$(GLSL_SRCDIR)/nir/nir_validate.c \
