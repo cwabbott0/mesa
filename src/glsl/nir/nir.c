@@ -244,6 +244,7 @@ nir_function_impl_create(nir_function_overload *overload)
    impl->reg_alloc = 0;
    impl->ssa_alloc = 0;
    impl->block_index_dirty = true;
+   impl->dominance_dirty = true;
 
    /* create start & end blocks */
    nir_block *start_block = nir_block_create(mem_ctx);
@@ -270,6 +271,8 @@ nir_block_create(void *mem_ctx)
 
    block->successors[0] = block->successors[1] = NULL;
    block->predecessors = _mesa_set_create(mem_ctx, _mesa_key_pointer_equal);
+   block->imm_dom = NULL;
+   block->dom_frontier = _mesa_set_create(mem_ctx, _mesa_key_pointer_equal);
 
    exec_list_make_empty(&block->instr_list);
 
@@ -812,6 +815,9 @@ handle_jump(nir_block *block)
 
    unlink_block_successors(block);
 
+   nir_function_impl *impl = nir_cf_node_get_function(&block->cf_node);
+   impl->dominance_dirty = true;
+
    if (jump_instr->type == nir_jump_break ||
        jump_instr->type == nir_jump_continue) {
       nir_loop *loop = nearest_loop(&block->cf_node);
@@ -835,7 +841,6 @@ handle_jump(nir_block *block)
 	    unlink_blocks(last_block, after_block);
       }
    } else {
-      nir_function_impl *impl = nir_cf_node_get_function(&block->cf_node);
       link_blocks(block, impl->end_block, NULL);
    }
 }
@@ -906,6 +911,9 @@ handle_remove_jump(nir_block *block, nir_jump_type type)
 	 block_add_pred(next_block, last_block);
       }
    }
+
+   nir_function_impl *impl = nir_cf_node_get_function(&block->cf_node);
+   impl->dominance_dirty = true;
 }
 
 /**
@@ -1013,6 +1021,7 @@ nir_cf_node_insert_after(nir_cf_node *node, nir_cf_node *after)
 
    nir_function_impl *impl = nir_cf_node_get_function(node);
    impl->block_index_dirty = true;
+   impl->dominance_dirty = true;
 }
 
 void
@@ -1055,6 +1064,7 @@ nir_cf_node_insert_before(nir_cf_node *node, nir_cf_node *before)
 
    nir_function_impl *impl = nir_cf_node_get_function(node);
    impl->block_index_dirty = true;
+   impl->dominance_dirty = true;
 }
 
 void
