@@ -13,6 +13,9 @@ LIBGLCPP_GENERATED_FILES = \
 	$(GLSL_BUILDDIR)/glcpp/glcpp-lex.c \
 	$(GLSL_BUILDDIR)/glcpp/glcpp-parse.c
 
+NIR_FILES = \
+	$(GLSL_SRCDIR)/nir/nir_types.cpp
+
 # libglsl
 
 LIBGLSL_FILES = \
@@ -103,7 +106,8 @@ LIBGLSL_FILES = \
 	$(GLSL_SRCDIR)/opt_tree_grafting.cpp \
 	$(GLSL_SRCDIR)/opt_vectorize.cpp \
 	$(GLSL_SRCDIR)/s_expression.cpp \
-	$(GLSL_SRCDIR)/strtod.c
+	$(GLSL_SRCDIR)/strtod.c \
+	$(NIR_FILES)
 
 # glsl_compiler
 
