@@ -22,7 +22,8 @@ NIR_FILES = \
 	$(GLSL_SRCDIR)/nir/nir_remove_dead_variables.c \
 	$(GLSL_SRCDIR)/nir/nir_validate.c \
 	$(GLSL_SRCDIR)/nir/nir_types.cpp \
-	$(GLSL_SRCDIR)/nir/glsl_to_nir.cpp
+	$(GLSL_SRCDIR)/nir/glsl_to_nir.cpp \
+	$(GLSL_SRCDIR)/nir/nir_lower_samplers.cpp
 
 # libglsl
 
