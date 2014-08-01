@@ -374,16 +374,16 @@ public:
                            bool is_rect, int sampler, int texunit);
    fs_inst *emit_texture_gen4(ir_texture *ir, fs_reg dst, fs_reg coordinate,
                               int coord_components, fs_reg shadow_comp,
-                              fs_reg lod, fs_reg lod2);
+                              fs_reg lod, fs_reg lod2, int lod_components);
    fs_inst *emit_texture_gen5(ir_texture *ir, fs_reg dst, fs_reg coordinate,
                               int coord_components, fs_reg shadow_comp,
-                              fs_reg lod, fs_reg lod2, fs_reg sample_index,
-                              bool has_offset);
+                              fs_reg lod, fs_reg lod2, int lod_components,
+                              fs_reg sample_index, bool has_offset);
    fs_inst *emit_texture_gen7(ir_texture *ir, fs_reg dst, fs_reg coordinate,
                               int coord_components, fs_reg shadow_comp,
-                              fs_reg lod, fs_reg lod2, fs_reg sample_index,
-                              bool has_offset, fs_reg offset, fs_reg mcs,
-                              int sampler);
+                              fs_reg lod, fs_reg lod2, int lod_components,
+                              fs_reg sample_index, bool has_offset,
+                              fs_reg offset, fs_reg mcs, int sampler);
    fs_reg emit_mcs_fetch(fs_reg coordinate, int components, int sampler);
    void emit_gen6_gather_wa(uint8_t wa, fs_reg dst);
    fs_reg fix_math_operand(fs_reg src);
