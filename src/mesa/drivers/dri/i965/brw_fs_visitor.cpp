@@ -1277,7 +1277,7 @@ fs_visitor::emit_texture_gen4(ir_texture *ir, fs_reg dst, fs_reg coordinate,
 fs_inst *
 fs_visitor::emit_texture_gen5(ir_texture *ir, fs_reg dst, fs_reg coordinate,
                               fs_reg shadow_c, fs_reg lod, fs_reg lod2,
-                              fs_reg sample_index)
+                              fs_reg sample_index, bool has_offset)
 {
    int mlen = 0;
    int base_mrf = 2;
@@ -1286,7 +1286,7 @@ fs_visitor::emit_texture_gen5(ir_texture *ir, fs_reg dst, fs_reg coordinate,
    const int vector_elements =
       ir->coordinate ? ir->coordinate->type->vector_elements : 0;
 
-   if (ir->offset) {
+   if (has_offset) {
       /* The offsets set up by the ir_texture visitor are in the
        * m1 header, so we can't go headerless.
        */
@@ -1404,7 +1404,8 @@ fs_visitor::emit_texture_gen5(ir_texture *ir, fs_reg dst, fs_reg coordinate,
 fs_inst *
 fs_visitor::emit_texture_gen7(ir_texture *ir, fs_reg dst, fs_reg coordinate,
                               fs_reg shadow_c, fs_reg lod, fs_reg lod2,
-                              fs_reg sample_index, fs_reg mcs, int sampler)
+                              fs_reg sample_index, bool has_offset,
+                              fs_reg offset, fs_reg mcs, int sampler)
 {
    int reg_width = dispatch_width / 8;
    bool header_present = false;
@@ -1415,7 +1416,7 @@ fs_visitor::emit_texture_gen7(ir_texture *ir, fs_reg dst, fs_reg coordinate,
    }
    int length = 0;
 
-   if (ir->op == ir_tg4 || (ir->offset && ir->op != ir_txf) || sampler >= 16) {
+   if (ir->op == ir_tg4 || (has_offset && ir->op != ir_txf) || sampler >= 16) {
       /* For general texture offsets (no txf workaround), we need a header to
        * put them in.  Note that for SIMD16 we're making space for two actual
        * hardware registers here, so the emit will have to fix up for this.
@@ -1436,7 +1437,7 @@ fs_visitor::emit_texture_gen7(ir_texture *ir, fs_reg dst, fs_reg coordinate,
       length++;
    }
 
-   bool has_nonconstant_offset = ir->offset && !ir->offset->as_constant();
+   bool has_nonconstant_offset = has_offset && offset.file != BAD_FILE;
    bool coordinate_done = false;
 
    /* Set up the LOD info */
@@ -1530,9 +1531,6 @@ fs_visitor::emit_texture_gen7(ir_texture *ir, fs_reg dst, fs_reg coordinate,
             no16("Gen7 does not support gather4_po_c in SIMD16 mode.");
 
          /* More crazy intermixing */
-         ir->offset->accept(this);
-         fs_reg offset_value = this->result;
-
          for (int i = 0; i < 2; i++) { /* u, v */
             emit(MOV(sources[length], coordinate));
             coordinate.reg_offset++;
@@ -1540,8 +1538,8 @@ fs_visitor::emit_texture_gen7(ir_texture *ir, fs_reg dst, fs_reg coordinate,
          }
 
          for (int i = 0; i < 2; i++) { /* offu, offv */
-            emit(MOV(retype(sources[length], BRW_REGISTER_TYPE_D), offset_value));
-            offset_value.reg_offset++;
+            emit(MOV(retype(sources[length], BRW_REGISTER_TYPE_D), offset));
+            offset.reg_offset++;
             length++;
          }
 
@@ -1853,12 +1851,20 @@ fs_visitor::visit(ir_texture *ir)
     */
    fs_reg dst = fs_reg(this, glsl_type::get_instance(ir->type->base_type, 4, 1));
 
+   bool has_offset = ir->offset != NULL;
+   fs_reg offset;
+   if (has_offset && ir->offset->as_constant()) {
+      ir->offset->accept(this);
+      offset = this->result;
+   }
+
    if (brw->gen >= 7) {
       inst = emit_texture_gen7(ir, dst, coordinate, shadow_comparitor,
-                               lod, lod2, sample_index, mcs, sampler);
+                               lod, lod2, sample_index, has_offset, offset,
+                               mcs, sampler);
    } else if (brw->gen >= 5) {
       inst = emit_texture_gen5(ir, dst, coordinate, shadow_comparitor,
-                               lod, lod2, sample_index);
+                               lod, lod2, sample_index, has_offset);
    } else {
       inst = emit_texture_gen4(ir, dst, coordinate, shadow_comparitor,
                                lod, lod2);
