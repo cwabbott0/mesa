@@ -1105,7 +1105,7 @@ fs_visitor::emit_texture_gen4(ir_texture *ir, fs_reg dst, fs_reg coordinate,
    /* g0 header. */
    mlen = 1;
 
-   if (ir->shadow_comparitor) {
+   if (shadow_c.file != BAD_FILE) {
       for (int i = 0; i < ir->coordinate->type->vector_elements; i++) {
 	 emit(MOV(fs_reg(MRF, base_mrf + mlen + i), coordinate));
 	 coordinate.reg_offset++;
@@ -1302,7 +1302,7 @@ fs_visitor::emit_texture_gen5(ir_texture *ir, fs_reg dst, fs_reg coordinate,
    }
    mlen += vector_elements * reg_width;
 
-   if (ir->shadow_comparitor) {
+   if (shadow_c.file != BAD_FILE) {
       mlen = MAX2(mlen, header_present + 4 * reg_width);
 
       emit(MOV(fs_reg(MRF, base_mrf + mlen), shadow_c));
@@ -1431,7 +1431,7 @@ fs_visitor::emit_texture_gen7(ir_texture *ir, fs_reg dst, fs_reg coordinate,
       length++;
    }
 
-   if (ir->shadow_comparitor) {
+   if (shadow_c.file != BAD_FILE) {
       emit(MOV(sources[length], shadow_c));
       length++;
    }
@@ -1526,7 +1526,7 @@ fs_visitor::emit_texture_gen7(ir_texture *ir, fs_reg dst, fs_reg coordinate,
       break;
    case ir_tg4:
       if (has_nonconstant_offset) {
-         if (ir->shadow_comparitor)
+         if (shadow_c.file != BAD_FILE)
             no16("Gen7 does not support gather4_po_c in SIMD16 mode.");
 
          /* More crazy intermixing */
