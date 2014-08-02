@@ -241,7 +241,7 @@ public:
    void visit(ir_emit_vertex *);
    void visit(ir_end_primitive *);
 
-   uint32_t gather_channel(ir_texture *ir, int sampler);
+   uint32_t gather_channel(int orig_chan, int sampler);
    void swizzle_result(ir_texture_opcode op, int dest_components,
                        fs_reg orig_val, int sampler);
 

@@ -1885,7 +1885,7 @@ fs_visitor::visit(ir_texture *ir)
                             ir->offset->type->vector_elements);
 
    if (ir->op == ir_tg4)
-      inst->texture_offset |= gather_channel(ir, sampler) << 16; // M0.2:16-17
+      inst->texture_offset |= gather_channel(ir->lod_info.component->as_constant()->value.i[0], sampler) << 16; // M0.2:16-17
 
    inst->sampler = sampler;
 
@@ -1957,10 +1957,9 @@ fs_visitor::emit_gen6_gather_wa(uint8_t wa, fs_reg dst)
  * Set up the gather channel based on the swizzle, for gather4.
  */
 uint32_t
-fs_visitor::gather_channel(ir_texture *ir, int sampler)
+fs_visitor::gather_channel(int orig_chan, int sampler)
 {
-   ir_constant *chan = ir->lod_info.component->as_constant();
-   int swiz = GET_SWZ(key->tex.swizzles[sampler], chan->value.i[0]);
+   int swiz = GET_SWZ(key->tex.swizzles[sampler], orig_chan);
    switch (swiz) {
       case SWIZZLE_X: return 0;
       case SWIZZLE_Y:
