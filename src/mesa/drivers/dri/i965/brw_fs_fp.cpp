@@ -478,29 +478,14 @@ fs_visitor::emit_fragment_program_code()
             unreachable("not reached");
          }
 
-         int coord_components = coordinate_type->vector_elements;
-
          if (fpi->TexShadow)
             shadow_c = offset(coordinate, 2);
 
-         coordinate = rescale_texcoord(coordinate, coordinate_type,
-                                       fpi->TexSrcTarget == TEXTURE_RECT_INDEX,
-                                       fpi->TexSrcUnit, fpi->TexSrcUnit);
-
-         fs_inst *inst;
-         if (brw->gen >= 7) {
-            inst = emit_texture_gen7(ir->op, dst, coordinate, coord_components, shadow_c, lod, dpdy, 0, sample_index, false, offset_reg, fs_reg(0u), fpi->TexSrcUnit);
-         } else if (brw->gen >= 5) {
-            inst = emit_texture_gen5(ir->op, dst, coordinate, coord_components, shadow_c, lod, dpdy, 0, sample_index, false);
-         } else {
-            inst = emit_texture_gen4(ir->op, dst, coordinate, coord_components, shadow_c, lod, dpdy, 0);
-         }
-
-         inst->sampler = fpi->TexSrcUnit;
-         inst->shadow_compare = fpi->TexShadow;
-
-         /* Reuse the GLSL swizzle_result() handler. */
-         swizzle_result(ir->op, 4, dst, fpi->TexSrcUnit);
+         emit_texture(ir->op, glsl_type::vec4_type, coordinate,
+                      coordinate_type, shadow_c, lod, dpdy, 0, sample_index,
+                      false, offset_reg, NULL, 0, reg_undef, 0, false,
+                      fpi->TexSrcTarget == TEXTURE_RECT_INDEX,
+                      fpi->TexSrcUnit, fpi->TexSrcUnit);
          dst = this->result;
 
          break;

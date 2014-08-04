@@ -388,6 +388,14 @@ public:
                               int lod_components, fs_reg sample_index,
                               bool has_offset, fs_reg offset, fs_reg mcs,
                               int sampler);
+   void emit_texture(ir_texture_opcode op, const glsl_type *dest_type,
+                     fs_reg coordinate, const struct glsl_type *coord_type,
+                     fs_reg shadow_c, fs_reg lod, fs_reg lod2,
+                     int lod_components, fs_reg sample_index,
+                     bool has_offset, fs_reg offset, int *const_offset,
+                     unsigned offset_components, fs_reg mcs,
+                     int gather_component, bool is_cube_array, bool is_rect,
+                     int sampler, int texunit);
    fs_reg emit_mcs_fetch(fs_reg coordinate, int components, int sampler);
    void emit_gen6_gather_wa(uint8_t wa, fs_reg dst);
    fs_reg fix_math_operand(fs_reg src);
