@@ -579,9 +579,9 @@ fs_visitor::setup_fp_regs()
 
          switch (i) {
          case VARYING_SLOT_POS:
-            ir->data.pixel_center_integer = fp->PixelCenterInteger;
-            ir->data.origin_upper_left = fp->OriginUpperLeft;
-            fp_input_regs[i] = *emit_fragcoord_interpolation(ir);
+            fp_input_regs[i] =
+               *emit_fragcoord_interpolation(fp->PixelCenterInteger,
+                                             fp->OriginUpperLeft);
             break;
          case VARYING_SLOT_FACE:
             fp_input_regs[i] = *emit_frontfacing_interpolation();

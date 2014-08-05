@@ -58,7 +58,8 @@ fs_visitor::visit(ir_variable *ir)
 
    if (ir->data.mode == ir_var_shader_in) {
       if (!strcmp(ir->name, "gl_FragCoord")) {
-	 reg = emit_fragcoord_interpolation(ir);
+	 reg = emit_fragcoord_interpolation(ir->data.pixel_center_integer,
+                                            ir->data.origin_upper_left);
       } else if (!strcmp(ir->name, "gl_FrontFacing")) {
 	 reg = emit_frontfacing_interpolation();
       } else {
