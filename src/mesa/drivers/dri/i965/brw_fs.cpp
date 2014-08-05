@@ -1185,9 +1185,9 @@ fs_visitor::emit_general_interpolation(ir_variable *ir)
 }
 
 fs_reg *
-fs_visitor::emit_frontfacing_interpolation(ir_variable *ir)
+fs_visitor::emit_frontfacing_interpolation()
 {
-   fs_reg *reg = new(this->mem_ctx) fs_reg(this, ir->type);
+   fs_reg *reg = new(this->mem_ctx) fs_reg(this, glsl_type::bool_type);
 
    /* The frontfacing comes in as a bit in the thread payload. */
    if (brw->gen >= 6) {
