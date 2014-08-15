@@ -1435,7 +1435,7 @@ fs_visitor::emit_texture_gen7(ir_texture_opcode op, fs_reg dst,
    }
 
    if (shadow_c.file != BAD_FILE) {
-      emit(MOV(sources[length], shadow_c));
+      emit(MOV(retype(sources[length], shadow_c.type), shadow_c));
       length++;
    }
 
@@ -1448,11 +1448,11 @@ fs_visitor::emit_texture_gen7(ir_texture_opcode op, fs_reg dst,
    case ir_lod:
       break;
    case ir_txb:
-      emit(MOV(sources[length], lod));
+      emit(MOV(retype(sources[length], lod.type), lod));
       length++;
       break;
    case ir_txl:
-      emit(MOV(sources[length], lod));
+      emit(MOV(retype(sources[length], lod.type), lod));
       length++;
       break;
    case ir_txd: {
@@ -1462,7 +1462,7 @@ fs_visitor::emit_texture_gen7(ir_texture_opcode op, fs_reg dst,
        * [hdr], [ref], x, dPdx.x, dPdy.x, y, dPdx.y, dPdy.y, z, dPdx.z, dPdy.z
        */
       for (int i = 0; i < coord_components; i++) {
-	 emit(MOV(sources[length], coordinate));
+	 emit(MOV(retype(sources[length], coordinate.type), coordinate));
 	 coordinate.reg_offset++;
 	 length++;
 
@@ -1470,11 +1470,11 @@ fs_visitor::emit_texture_gen7(ir_texture_opcode op, fs_reg dst,
           * only derivatives for (u, v, r).
           */
          if (i < lod_components) {
-            emit(MOV(sources[length], lod));
+            emit(MOV(retype(sources[length], lod.type), lod));
             lod.reg_offset++;
             length++;
 
-            emit(MOV(sources[length], lod2));
+            emit(MOV(retype(sources[length], lod2.type), lod2));
             lod2.reg_offset++;
             length++;
          }
@@ -1484,7 +1484,7 @@ fs_visitor::emit_texture_gen7(ir_texture_opcode op, fs_reg dst,
       break;
    }
    case ir_txs:
-      emit(MOV(retype(sources[length], BRW_REGISTER_TYPE_UD), lod));
+      emit(MOV(retype(sources[length], lod.type), lod));
       length++;
       break;
    case ir_query_levels:
@@ -1493,15 +1493,15 @@ fs_visitor::emit_texture_gen7(ir_texture_opcode op, fs_reg dst,
       break;
    case ir_txf:
       /* Unfortunately, the parameters for LD are intermixed: u, lod, v, r. */
-      emit(MOV(retype(sources[length], BRW_REGISTER_TYPE_D), coordinate));
+      emit(MOV(retype(sources[length], coordinate.type), coordinate));
       coordinate.reg_offset++;
       length++;
 
-      emit(MOV(retype(sources[length], BRW_REGISTER_TYPE_D), lod));
+      emit(MOV(retype(sources[length], lod.type), lod));
       length++;
 
       for (int i = 1; i < coord_components; i++) {
-	 emit(MOV(retype(sources[length], BRW_REGISTER_TYPE_D), coordinate));
+	 emit(MOV(retype(sources[length], coordinate.type), coordinate));
 	 coordinate.reg_offset++;
 	 length++;
       }
@@ -1509,18 +1509,18 @@ fs_visitor::emit_texture_gen7(ir_texture_opcode op, fs_reg dst,
       coordinate_done = true;
       break;
    case ir_txf_ms:
-      emit(MOV(retype(sources[length], BRW_REGISTER_TYPE_UD), sample_index));
+      emit(MOV(retype(sources[length], sample_index.type), sample_index));
       length++;
 
       /* data from the multisample control surface */
-      emit(MOV(retype(sources[length], BRW_REGISTER_TYPE_UD), mcs));
+      emit(MOV(retype(sources[length], mcs.type), mcs));
       length++;
 
       /* there is no offsetting for this message; just copy in the integer
        * texture coordinates
        */
       for (int i = 0; i < coord_components; i++) {
-         emit(MOV(retype(sources[length], BRW_REGISTER_TYPE_D), coordinate));
+         emit(MOV(retype(sources[length], coordinate.type), coordinate));
          coordinate.reg_offset++;
          length++;
       }
@@ -1534,19 +1534,19 @@ fs_visitor::emit_texture_gen7(ir_texture_opcode op, fs_reg dst,
 
          /* More crazy intermixing */
          for (int i = 0; i < 2; i++) { /* u, v */
-            emit(MOV(sources[length], coordinate));
+            emit(MOV(retype(sources[length], coordinate.type), coordinate));
             coordinate.reg_offset++;
             length++;
          }
 
          for (int i = 0; i < 2; i++) { /* offu, offv */
-            emit(MOV(retype(sources[length], BRW_REGISTER_TYPE_D), offset));
+            emit(MOV(retype(sources[length], offset.type), offset));
             offset.reg_offset++;
             length++;
          }
 
          if (coord_components == 3) { /* r if present */
-            emit(MOV(sources[length], coordinate));
+            emit(MOV(retype(sources[length], coordinate.type), coordinate));
             coordinate.reg_offset++;
             length++;
          }
@@ -1559,7 +1559,7 @@ fs_visitor::emit_texture_gen7(ir_texture_opcode op, fs_reg dst,
    /* Set up the coordinate (except for cases where it was done above) */
    if (!coordinate_done) {
       for (int i = 0; i < coord_components; i++) {
-         emit(MOV(sources[length], coordinate));
+         emit(MOV(retype(sources[length], coordinate.type), coordinate));
          coordinate.reg_offset++;
          length++;
       }
@@ -1815,6 +1815,7 @@ fs_visitor::emit_texture(ir_texture_opcode op, const glsl_type *dest_type,
    if (op == ir_txs && is_cube_array) {
       fs_reg depth = dst;
       depth.reg_offset = 2;
+      depth.type = BRW_REGISTER_TYPE_D;
       fs_reg fixed_depth = fs_reg(this, glsl_type::int_type);
       emit_math(SHADER_OPCODE_INT_QUOTIENT, fixed_depth, depth, fs_reg(6));
 
