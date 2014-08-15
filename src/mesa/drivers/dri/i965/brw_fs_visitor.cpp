@@ -3816,6 +3816,7 @@ fs_visitor::init()
    this->variable_ht = hash_table_ctor(0,
                                        hash_table_pointer_hash,
                                        hash_table_pointer_compare);
+   this->nir_reg_ht = _mesa_hash_table_create(NULL, _mesa_key_pointer_equal);
 
    memset(&this->payload, 0, sizeof(this->payload));
    memset(this->outputs, 0, sizeof(this->outputs));
@@ -3851,4 +3852,5 @@ fs_visitor::init()
 fs_visitor::~fs_visitor()
 {
    hash_table_dtor(this->variable_ht);
+   _mesa_hash_table_destroy(this->nir_reg_ht, NULL);
 }
