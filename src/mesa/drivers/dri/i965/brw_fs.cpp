@@ -3011,11 +3011,15 @@ fs_visitor::run()
        * functions called "main").
        */
       if (shader) {
+#if 0
          foreach_in_list(ir_instruction, ir, shader->base.ir) {
             base_ir = ir;
             this->result = reg_undef;
             ir->accept(this);
          }
+#else
+         emit_nir_code();
+#endif
       } else {
          emit_fragment_program_code();
       }
@@ -3029,6 +3033,9 @@ fs_visitor::run()
          emit_alpha_test();
 
       emit_fb_writes();
+      
+      if (1)
+         dump_instructions();
 
       split_virtual_grfs();
 
