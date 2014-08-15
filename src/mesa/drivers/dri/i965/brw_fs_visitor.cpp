@@ -1835,7 +1835,7 @@ get_tex(gl_shader_stage stage, const void *key)
 }
 
 fs_reg
-fs_visitor::rescale_texcoord(fs_reg coordinate, const glsl_type *coord_type,
+fs_visitor::rescale_texcoord(fs_reg coordinate, int coord_components,
                              bool is_rect, uint32_t sampler, int texunit)
 {
    fs_inst *inst = NULL;
@@ -1894,7 +1894,7 @@ fs_visitor::rescale_texcoord(fs_reg coordinate, const glsl_type *coord_type,
     * tracking to get the scaling factor.
     */
    if (brw->gen < 6 && is_rect) {
-      fs_reg dst = fs_reg(this, coord_type);
+      fs_reg dst = fs_reg(GRF, virtual_grf_alloc(coord_components));
       fs_reg src = coordinate;
       coordinate = dst;
 
@@ -1934,8 +1934,8 @@ fs_visitor::rescale_texcoord(fs_reg coordinate, const glsl_type *coord_type,
       }
    }
 
-   if (coord_type && needs_gl_clamp) {
-      for (unsigned int i = 0; i < MIN2(coord_type->vector_elements, 3); i++) {
+   if (coord_components > 0 && needs_gl_clamp) {
+      for (int i = 0; i < MIN2(coord_components, 3); i++) {
 	 if (tex->gl_clamp_mask[i] & (1 << sampler)) {
 	    fs_reg chan = coordinate;
 	    chan = offset(chan, i);
@@ -1982,7 +1982,7 @@ fs_visitor::emit_mcs_fetch(fs_reg coordinate, int components, fs_reg sampler)
 void
 fs_visitor::emit_texture(ir_texture_opcode op,
                          const glsl_type *dest_type,
-                         fs_reg coordinate, const struct glsl_type *coord_type,
+                         fs_reg coordinate, int coord_components,
                          fs_reg shadow_c,
                          fs_reg lod, fs_reg lod2, int grad_components,
                          fs_reg sample_index,
@@ -2019,7 +2019,7 @@ fs_visitor::emit_texture(ir_texture_opcode op,
       /* FINISHME: Texture coordinate rescaling doesn't work with non-constant
        * samplers.  This should only be a problem with GL_CLAMP on Gen7.
        */
-      coordinate = rescale_texcoord(coordinate, coord_type, is_rect,
+      coordinate = rescale_texcoord(coordinate, coord_components, is_rect,
                                     sampler, texunit);
    }
 
@@ -2027,8 +2027,6 @@ fs_visitor::emit_texture(ir_texture_opcode op,
     * samples, so don't worry about them.
     */
    fs_reg dst(this, glsl_type::get_instance(dest_type->base_type, 4, 1));
-
-   int coord_components = coord_type ? coord_type->vector_elements : 0;
 
    if (brw->gen >= 7) {
       inst = emit_texture_gen7(op, dst, coordinate, coord_components,
@@ -2140,9 +2138,9 @@ fs_visitor::visit(ir_texture *ir)
     * generating these values may involve SEND messages that need the MRFs.
     */
    fs_reg coordinate;
-   const glsl_type *coord_type = NULL;
+   int coord_components = 0;
    if (ir->coordinate) {
-      coord_type = ir->coordinate->type;
+      coord_components = ir->coordinate->type->vector_elements;
       ir->coordinate->accept(this);
       coordinate = this->result;
    }
@@ -2224,10 +2222,11 @@ fs_visitor::visit(ir_texture *ir)
       ir->sampler->type->sampler_dimensionality == GLSL_SAMPLER_DIM_CUBE &&
       ir->sampler->type->sampler_array;
 
-   emit_texture(ir->op, ir->type, coordinate, coord_type, shadow_comparitor,
-                lod, lod2, grad_components, sample_index, offset_value,
-                offset_components, mcs, gather_component,
-                is_cube_array, is_rect, sampler, sampler_reg, texunit);
+   emit_texture(ir->op, ir->type, coordinate, coord_components,
+                shadow_comparitor, lod, lod2, grad_components,
+                sample_index, offset_value, offset_components, mcs,
+                gather_component, is_cube_array, is_rect, sampler,
+                sampler_reg, texunit);
 }
 
 /**
