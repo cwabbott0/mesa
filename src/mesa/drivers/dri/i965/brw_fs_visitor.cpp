@@ -1608,7 +1608,7 @@ fs_visitor::emit_texture_gen7(ir_texture_opcode op, fs_reg dst,
 }
 
 fs_reg
-fs_visitor::rescale_texcoord(fs_reg coordinate, const glsl_type *coord_type,
+fs_visitor::rescale_texcoord(fs_reg coordinate, int coord_components,
                              bool is_rect, int sampler, int texunit)
 {
    fs_inst *inst = NULL;
@@ -1666,7 +1666,7 @@ fs_visitor::rescale_texcoord(fs_reg coordinate, const glsl_type *coord_type,
     * tracking to get the scaling factor.
     */
    if (brw->gen < 6 && is_rect) {
-      fs_reg dst = fs_reg(this, coord_type);
+      fs_reg dst = fs_reg(GRF, virtual_grf_alloc(coord_components));
       fs_reg src = coordinate;
       coordinate = dst;
 
@@ -1706,9 +1706,9 @@ fs_visitor::rescale_texcoord(fs_reg coordinate, const glsl_type *coord_type,
       }
    }
 
-   if (coord_type && needs_gl_clamp) {
-      for (unsigned int i = 0;
-           i < MIN2(coord_type->vector_elements, 3); i++) {
+   if (coord_components > 0 && needs_gl_clamp) {
+      for (int i = 0;
+           i < MIN2(coord_components, 3); i++) {
 	 if (key->tex.gl_clamp_mask[i] & (1 << sampler)) {
 	    fs_reg chan = coordinate;
 	    chan.reg_offset += i;
@@ -1754,7 +1754,7 @@ fs_visitor::emit_mcs_fetch(fs_reg coordinate, int components, int sampler)
 
 void
 fs_visitor::emit_texture(ir_texture_opcode op, const glsl_type *dest_type,
-                         fs_reg coordinate, const struct glsl_type *coord_type,
+                         fs_reg coordinate, int coord_components,
                          fs_reg shadow_c, fs_reg lod, fs_reg lod2,
                          int lod_components, fs_reg sample_index,
                          bool has_offset, fs_reg offset, int *const_offset,
@@ -1784,16 +1784,14 @@ fs_visitor::emit_texture(ir_texture_opcode op, const glsl_type *dest_type,
    }
 
    if (coordinate.file != BAD_FILE) {
-      coordinate = rescale_texcoord(coordinate, coord_type, is_rect, sampler,
-                                    texunit);
+      coordinate = rescale_texcoord(coordinate, coord_components, is_rect,
+                                    sampler, texunit);
    }
 
    /* Writemasking doesn't eliminate channels on SIMD8 texture
     * samples, so don't worry about them.
     */
    fs_reg dst = fs_reg(this, glsl_type::get_instance(dest_type->base_type, 4, 1));
-
-   int coord_components = coord_type ? coord_type->vector_elements : 0;
 
    if (brw->gen >= 7) {
       inst = emit_texture_gen7(op, dst, coordinate, coord_components,
@@ -1867,9 +1865,6 @@ fs_visitor::visit(ir_texture *ir)
    int gather_component = 0;
    if (ir->op == ir_tg4)
       gather_component = ir->lod_info.component->as_constant()->value.i[0];
-
-   const struct glsl_type *coord_type =
-      ir->coordinate ? ir->coordinate->type : NULL;
 
    bool is_rect =
       ir->sampler->type->sampler_dimensionality == GLSL_SAMPLER_DIM_RECT;
@@ -1945,11 +1940,14 @@ fs_visitor::visit(ir_texture *ir)
    bool is_cube_array =
       sampler_type->sampler_dimensionality == GLSL_SAMPLER_DIM_CUBE &&
       sampler_type->sampler_array;
+   
+   int coord_components = ir->coordinate ?
+                          ir->coordinate->type->vector_elements : 0;
 
-   emit_texture(ir->op, ir->type, coordinate, coord_type, shadow_comparitor,
-                lod, lod2, lod_components, sample_index, has_offset, offset,
-                const_offset, offset_components, mcs, gather_component,
-                is_cube_array, is_rect, sampler, texunit);
+   emit_texture(ir->op, ir->type, coordinate, coord_components,
+                shadow_comparitor, lod, lod2, lod_components, sample_index,
+                has_offset, offset, const_offset, offset_components, mcs,
+                gather_component, is_cube_array, is_rect, sampler, texunit);
 }
 
 /**
