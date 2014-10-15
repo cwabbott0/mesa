@@ -614,6 +614,14 @@ fs_visitor::nir_emit_alu(nir_alu_instr *instr)
          emit_percomp(FS_OPCODE_DDX_COARSE, result, op[0],
                       instr->dest.write_mask, instr->dest.saturate);
       break;
+   case nir_op_fddx_fine:
+      emit_percomp(FS_OPCODE_DDX_FINE, result, op[0],
+                   instr->dest.write_mask, instr->dest.saturate);
+      break;
+   case nir_op_fddx_coarse:
+      emit_percomp(FS_OPCODE_DDX_COARSE, result, op[0],
+                   instr->dest.write_mask, instr->dest.saturate);
+      break;
    case nir_op_fddy:
       if (fs_key->high_quality_derivatives)
          emit_percomp(FS_OPCODE_DDY_FINE, result, op[0],
@@ -623,6 +631,16 @@ fs_visitor::nir_emit_alu(nir_alu_instr *instr)
          emit_percomp(FS_OPCODE_DDY_COARSE, result, op[0],
                       fs_reg(fs_key->render_to_fbo),
                       instr->dest.write_mask, instr->dest.saturate);
+      break;
+   case nir_op_fddy_fine:
+      emit_percomp(FS_OPCODE_DDY_FINE, result, op[0],
+                   fs_reg(fs_key->render_to_fbo),
+                   instr->dest.write_mask, instr->dest.saturate);
+      break;
+   case nir_op_fddy_coarse:
+      emit_percomp(FS_OPCODE_DDY_COARSE, result, op[0],
+                   fs_reg(fs_key->render_to_fbo),
+                   instr->dest.write_mask, instr->dest.saturate);
       break;
 
    case nir_op_fadd:
