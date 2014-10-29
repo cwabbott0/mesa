@@ -1657,9 +1657,7 @@ nir_foreach_block(nir_function_impl *impl, nir_foreach_block_cb cb, void *state)
          return false;
    }
 
-   cb(impl->end_block, state);
-
-   return true;
+   return cb(impl->end_block, state);
 }
 
 static bool
