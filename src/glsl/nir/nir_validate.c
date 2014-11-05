@@ -398,6 +398,7 @@ validate_phi_instr(nir_phi_instr *instr, validate_state *state)
 
    validate_dest(&instr->dest, state);
 
+   exec_list_validate(&instr->srcs);
    assert(exec_list_length(&instr->srcs) ==
           state->block->predecessors->entries);
 }
@@ -452,6 +453,7 @@ validate_phi_src(nir_phi_instr *instr, nir_block *pred, validate_state *state)
 {
    state->instr = &instr->instr;
 
+   exec_list_validate(&instr->srcs);
    foreach_list_typed(nir_phi_src, src, node, &instr->srcs) {
       if (src->pred == pred) {
          validate_src(&src->src, state);
@@ -482,6 +484,7 @@ validate_block(nir_block *block, validate_state *state)
 
    state->block = block;
 
+   exec_list_validate(&block->instr_list);
    nir_foreach_instr(block, instr) {
       if (instr->type == nir_instr_type_phi) {
          assert(instr == nir_block_first_instr(block) ||
@@ -548,10 +551,12 @@ validate_if(nir_if *if_stmt, validate_state *state)
    nir_cf_node *old_parent = state->parent_node;
    state->parent_node = &if_stmt->cf_node;
 
+   exec_list_validate(&if_stmt->then_list);
    foreach_list_typed(nir_cf_node, cf_node, node, &if_stmt->then_list) {
       validate_cf_node(cf_node, state);
    }
 
+   exec_list_validate(&if_stmt->else_list);
    foreach_list_typed(nir_cf_node, cf_node, node, &if_stmt->else_list) {
       validate_cf_node(cf_node, state);
    }
@@ -579,6 +584,7 @@ validate_loop(nir_loop *loop, validate_state *state)
    nir_cf_node *old_parent = state->parent_node;
    state->parent_node = &loop->cf_node;
 
+   exec_list_validate(&loop->body);
    foreach_list_typed(nir_cf_node, cf_node, node, &loop->body) {
       validate_cf_node(cf_node, state);
    }
@@ -705,14 +711,17 @@ validate_function_impl(nir_function_impl *impl, validate_state *state)
    state->impl = impl;
    state->parent_node = &impl->cf_node;
 
+   exec_list_validate(&impl->locals);
    foreach_list_typed(nir_variable, var, node, &impl->locals) {
       validate_var_decl(var, false, state);
    }
 
+   exec_list_validate(&impl->registers);
    foreach_list_typed(nir_register, reg, node, &impl->registers) {
       prevalidate_reg_decl(reg, false, state);
    }
 
+   exec_list_validate(&impl->body);
    foreach_list_typed(nir_cf_node, node, node, &impl->body) {
       validate_cf_node(node, state);
    }
@@ -733,6 +742,7 @@ validate_function_overload(nir_function_overload *overload,
 static void
 validate_function(nir_function *func, validate_state *state)
 {
+   exec_list_validate(&func->overload_list);
    foreach_list_typed(nir_function_overload, overload, node, &func->overload_list) {
       assert(overload->function == func);
       validate_function_overload(overload, state);
@@ -774,18 +784,22 @@ nir_validate_shader(nir_shader *shader)
       validate_var_decl((nir_variable *) entry->data, true, &state);
    }
 
+   exec_list_validate(&shader->globals);
    foreach_list_typed(nir_variable, var, node, &shader->globals) {
      validate_var_decl(var, true, &state);
    }
 
+   exec_list_validate(&shader->system_values);
    foreach_list_typed(nir_variable, var, node, &shader->system_values) {
      validate_var_decl(var, true, &state);
    }
 
+   exec_list_validate(&shader->registers);
    foreach_list_typed(nir_register, reg, node, &shader->registers) {
       prevalidate_reg_decl(reg, true, &state);
    }
 
+   exec_list_validate(&shader->functions);
    foreach_list_typed(nir_function, func, node, &shader->functions) {
       validate_function(func, &state);
    }
