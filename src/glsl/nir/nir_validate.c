@@ -399,6 +399,9 @@ validate_tex_instr(nir_tex_instr *instr, validate_state *state)
       validate_src(&instr->src[i], state);
    }
 
+   if (instr->has_sampler_indirect)
+      validate_src(&instr->sampler_indirect, state);
+
    if (instr->sampler != NULL)
       validate_deref_var(instr->sampler, state);
 }

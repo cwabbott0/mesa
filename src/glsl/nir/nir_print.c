@@ -498,6 +498,10 @@ print_tex_instr(nir_tex_instr *instr, print_var_state *state, FILE *fp)
       print_deref(instr->sampler, state, fp);
    } else {
       fprintf(fp, "%u", instr->sampler_index);
+      if (instr->has_sampler_indirect) {
+         fprintf(fp, " + ");
+         print_src(&instr->sampler_indirect, fp);
+      }
    }
 
    fprintf(fp, " (sampler)");

@@ -464,6 +464,13 @@ nir_tex_instr_create(void *mem_ctx, unsigned num_srcs)
    instr->has_predicate = false;
    src_init(&instr->predicate);
 
+   instr->sampler_index = 0;
+   instr->has_sampler_indirect = false;
+   src_init(&instr->sampler_indirect);
+   instr->sampler_indirect_max = 0;
+
+   instr->sampler = NULL;
+
    return instr;
 }
 
@@ -1530,6 +1537,10 @@ visit_tex_src(nir_tex_instr *instr, nir_foreach_src_cb cb, void *state)
 
    if (instr->has_predicate)
       if (!visit_src(&instr->predicate, cb, state))
+         return false;
+
+   if (instr->has_sampler_indirect)
+      if (!visit_src(&instr->sampler_indirect, cb, state))
          return false;
 
    if (instr->sampler != NULL)

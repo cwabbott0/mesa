@@ -838,7 +838,17 @@ typedef struct {
    /* gather component selector */
    unsigned component : 2;
 
+   /** The sampler index
+    *
+    * If has_indirect is true, then the sampler index is given by
+    * sampler_index + sampler_indirect where sampler_indirect has a maximum
+    * possible value of sampler_indirect_max.
+    */
    unsigned sampler_index;
+   bool has_sampler_indirect;
+   nir_src sampler_indirect;
+   unsigned sampler_indirect_max;
+
    nir_deref_var *sampler; /* if this is NULL, use sampler_index instead */
 } nir_tex_instr;
 
