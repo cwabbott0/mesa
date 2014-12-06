@@ -1575,6 +1575,26 @@ fs_visitor::nir_emit_texture(nir_tex_instr *instr)
    brw_wm_prog_key *key = (brw_wm_prog_key*) this->key;
    unsigned sampler = instr->sampler_index;
 
+   fs_reg sampler_reg;
+   if (instr->has_sampler_indirect) {
+      /* Figure out the highest possible sampler index and mark it as used */
+      uint32_t max_used = sampler + instr->sampler_indirect_max;
+      if (instr->op == nir_texop_tg4 && brw->gen < 8) {
+         max_used += stage_prog_data->binding_table.gather_texture_start;
+      } else {
+         max_used += stage_prog_data->binding_table.texture_start;
+      }
+      brw_mark_surface_used(prog_data, max_used);
+
+      /* Emit code to evaluate the actual indexing expression */
+      sampler_reg = fs_reg(this, glsl_type::uint_type);
+      emit(ADD(sampler_reg, get_nir_src(instr->sampler_indirect),
+               fs_reg(sampler)))
+          ->force_writemask_all = true;
+   } else {
+      sampler_reg = fs_reg(sampler);
+   }
+
    /* FINISHME: We're failing to recompile our programs when the sampler is
     * updated.  This only matters for the texture rectangle scale parameters
     * (pre-gen6, or gen6+ with GL_CLAMP).
@@ -1653,7 +1673,7 @@ fs_visitor::nir_emit_texture(nir_tex_instr *instr)
 
    if (instr->op == nir_texop_txf_ms) {
       if (brw->gen >= 7 && key->tex.compressed_multisample_layout_mask & (1<<sampler))
-         mcs = emit_mcs_fetch(coordinate, instr->coord_components, fs_reg(sampler));
+         mcs = emit_mcs_fetch(coordinate, instr->coord_components, sampler_reg);
       else
          mcs = fs_reg(0u);
    }
@@ -1704,7 +1724,7 @@ fs_visitor::nir_emit_texture(nir_tex_instr *instr)
    emit_texture(op, dest_type, coordinate, instr->coord_components,
                 shadow_comparitor, lod, lod2, lod_components, sample_index,
                 offset, offset_components, mcs, gather_component,
-                is_cube_array, is_rect, sampler, fs_reg(sampler), texunit);
+                is_cube_array, is_rect, sampler, sampler_reg, texunit);
 
    fs_reg dest = get_nir_dest(instr->dest);
    dest.type = this->result.type;
