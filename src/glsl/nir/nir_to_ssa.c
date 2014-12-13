@@ -631,7 +631,7 @@ destroy_rewrite_state(rewrite_state *state)
 void
 nir_convert_to_ssa_impl(nir_function_impl *impl)
 {
-   nir_calc_dominance_impl(impl);
+   nir_metadata_require(impl, nir_metadata_dominance);
 
    insert_phi_nodes(impl);
 
@@ -641,6 +641,9 @@ nir_convert_to_ssa_impl(nir_function_impl *impl)
    rewrite_block(impl->start_block, &state);
 
    remove_unused_regs(impl, &state);
+
+   nir_metadata_preserve(impl, nir_metadata_block_index |
+                               nir_metadata_dominance);
 
    destroy_rewrite_state(&state);
 }
