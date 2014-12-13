@@ -378,9 +378,6 @@ nir_alu_instr_create(void *mem_ctx, nir_op op)
    for (unsigned i = 0; i < num_srcs; i++)
       alu_src_init(&instr->src[i]);
 
-   instr->has_predicate = false;
-   src_init(&instr->predicate);
-
    return instr;
 }
 
@@ -403,9 +400,6 @@ nir_load_const_instr_create(void *mem_ctx)
    instr->num_components = 0;
    instr->array_elems = 0;
 
-   instr->has_predicate = false;
-   src_init(&instr->predicate);
-
    return instr;
 }
 
@@ -426,9 +420,6 @@ nir_intrinsic_instr_create(void *mem_ctx, nir_intrinsic_op op)
    for (unsigned i = 0; i < num_srcs; i++)
       src_init(&instr->src[i]);
 
-   instr->has_predicate = false;
-   src_init(&instr->predicate);
-
    return instr;
 }
 
@@ -442,9 +433,6 @@ nir_call_instr_create(void *mem_ctx, nir_function_overload *callee)
    instr->num_params = callee->num_params;
    instr->params = ralloc_array(mem_ctx, nir_deref_var *, instr->num_params);
    instr->return_deref = NULL;
-
-   instr->has_predicate = false;
-   src_init(&instr->predicate);
 
    return instr;
 }
@@ -460,9 +448,6 @@ nir_tex_instr_create(void *mem_ctx, unsigned num_srcs)
    instr->num_srcs = num_srcs;
    for (unsigned i = 0; i < num_srcs; i++)
       src_init(&instr->src[i]);
-
-   instr->has_predicate = false;
-   src_init(&instr->predicate);
 
    instr->sampler_index = 0;
    instr->has_sampler_indirect = false;
@@ -1521,10 +1506,6 @@ visit_alu_src(nir_alu_instr *instr, nir_foreach_src_cb cb, void *state)
       if (!visit_src(&instr->src[i].src, cb, state))
          return false;
 
-   if (instr->has_predicate)
-      if (!visit_src(&instr->predicate, cb, state))
-         return false;
-
    return true;
 }
 
@@ -1533,10 +1514,6 @@ visit_tex_src(nir_tex_instr *instr, nir_foreach_src_cb cb, void *state)
 {
    for (unsigned i = 0; i < instr->num_srcs; i++)
       if (!visit_src(&instr->src[i], cb, state))
-         return false;
-
-   if (instr->has_predicate)
-      if (!visit_src(&instr->predicate, cb, state))
          return false;
 
    if (instr->has_sampler_indirect)
@@ -1565,20 +1542,12 @@ visit_intrinsic_src(nir_intrinsic_instr *instr, nir_foreach_src_cb cb,
       if (!visit_deref_src(instr->variables[i], cb, state))
          return false;
 
-   if (instr->has_predicate)
-      if (!visit_src(&instr->predicate, cb, state))
-         return false;
-
    return true;
 }
 
 static bool
 visit_call_src(nir_call_instr *instr, nir_foreach_src_cb cb, void *state)
 {
-   if (instr->has_predicate)
-      if (!visit_src(&instr->predicate, cb, state))
-         return false;
-
    return true;
 }
 
@@ -1586,10 +1555,6 @@ static bool
 visit_load_const_src(nir_load_const_instr *instr, nir_foreach_src_cb cb,
                      void *state)
 {
-   if (instr->has_predicate)
-      if (!visit_src(&instr->predicate, cb, state))
-         return false;
-
    return true;
 }
 

@@ -131,12 +131,6 @@ nir_split_var_copy_instr(nir_intrinsic_instr *old_copy,
          nir_intrinsic_instr *new_copy =
             nir_intrinsic_instr_create(state->mem_ctx, nir_intrinsic_copy_var);
 
-         if (old_copy->has_predicate) {
-            new_copy->has_predicate = true;
-            new_copy->predicate = nir_src_copy(old_copy->predicate,
-                                               state->mem_ctx);
-         }
-
          nir_deref *src = nir_copy_deref(state->mem_ctx, src_head);
          nir_deref *dest = nir_copy_deref(state->mem_ctx, dest_head);
 
