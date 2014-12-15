@@ -730,10 +730,8 @@ add_phi_sources(nir_block *block, nir_block *pred,
 }
 
 static bool
-lower_deref_to_ssa_block(nir_block *block, void *void_state)
+rename_variables_block(nir_block *block, struct lower_variables_state *state)
 {
-   struct lower_variables_state *state = void_state;
-
    nir_foreach_instr_safe(block, instr) {
       if (instr->type == nir_instr_type_phi) {
          nir_phi_instr *phi = nir_instr_as_phi(instr);
@@ -861,6 +859,9 @@ lower_deref_to_ssa_block(nir_block *block, void *void_state)
       add_phi_sources(block->successors[0], block, state);
    if (block->successors[1])
       add_phi_sources(block->successors[1], block, state);
+
+   for (unsigned i = 0; i < block->num_dom_children; ++i)
+      rename_variables_block(block->dom_children[i], state);
 
    return true;
 }
@@ -1001,7 +1002,7 @@ nir_lower_variables_impl(nir_function_impl *impl)
    nir_metadata_require(impl, nir_metadata_dominance);
 
    insert_phi_nodes(&state);
-   nir_foreach_block(impl, lower_deref_to_ssa_block, &state);
+   rename_variables_block(impl->start_block, &state);
 
    nir_metadata_preserve(impl, nir_metadata_block_index |
                                nir_metadata_dominance);
