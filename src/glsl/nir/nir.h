@@ -98,7 +98,7 @@ typedef struct nir_constant {
     * Value of the constant.
     *
     * The field used to back the values supplied by the constant is determined
-    * by the type associated with the \c ir_instruction.  Constants may be
+    * by the type associated with the \c nir_variable.  Constants may be
     * scalars, vectors, or matrices.
     */
    union nir_constant_data value;
@@ -175,7 +175,7 @@ typedef struct {
       /**
        * Interpolation mode for shader inputs / outputs
        *
-       * \sa ir_variable_interpolation
+       * \sa glsl_interp_qualifier
        */
       unsigned interpolation:2;
 
@@ -494,8 +494,8 @@ typedef struct {
     */
    /*@{*/
    /**
-    * For inputs interpreted as a floating point, flips the sign bit. For inputs
-    * interpreted as an integer, performs the two's complement negation.
+    * For inputs interpreted as floating point, flips the sign bit. For
+    * inputs interpreted as integers, performs the two's complement negation.
     */
    bool negate;
 
@@ -584,8 +584,8 @@ typedef struct {
    unsigned output_size;
 
    /**
-    * The type of vector that the instruction outputs. Note that this
-    * determines whether the saturate modifier is allowed.
+    * The type of vector that the instruction outputs. Note that the
+    * staurate modifier is only allowed on outputs with the float type.
     */
 
    nir_alu_type output_type;
@@ -596,9 +596,9 @@ typedef struct {
    unsigned input_sizes[4];
 
    /**
-    * The type of vector that each input takes. Note that negate is only
-    * allowed on inputs with int or float type, and behaves differently on the
-    * two, and absolute value is only allowed on float type inputs.
+    * The type of vector that each input takes. Note that negate and
+    * absolute value are only allowed on inputs with int or float type and
+    * behave differently on the two.
     */
    nir_alu_type input_types[4];
 
@@ -698,6 +698,32 @@ typedef enum {
 #undef INTRINSIC
 #undef LAST_INTRINSIC
 
+/** Represents an intrinsic
+ *
+ * An intrinsic is an instruction type for handling things that are
+ * more-or-less regular operations but don't just consume and produce SSA
+ * values like ALU operations do.  Intrinsics are not for things that have
+ * special semantic meaning such as phi nodes and parallel copies.
+ * Examples of intrinsics include variable load/store operations, system
+ * value loads, and the like.  Even though texturing more-or-less falls
+ * under this category, texturing is its own instruction type because
+ * trying to represent texturing with intrinsics would lead to a
+ * combinatorial explosion of intrinsic opcodes.
+ *
+ * By having a single instruction type for handling a lot of different
+ * cases, optimization passes can look for intrinsics and, for the most
+ * part, completely ignore them.  Each intrinsic type also has a few
+ * possible flags that govern whether or not they can be reordered or
+ * eliminated.  That way passes like dead code elimination can still work
+ * on intrisics without understanding the meaning of each.
+ *
+ * Each intrinsic has some number of constant indices, some number of
+ * variables, and some number of sources.  What these sources, variables,
+ * and indices mean depends on the intrinsic and is documented with the
+ * intrinsic declaration in nir_intrinsics.h.  Intrinsics and texture
+ * instructions are the only types of instruction that can operate on
+ * variables.
+ */
 typedef struct {
    nir_instr instr;
 
@@ -705,7 +731,14 @@ typedef struct {
 
    nir_dest dest;
 
-   /** number of components if this is a vectorized intrinsic */
+   /** number of components if this is a vectorized intrinsic
+    *
+    * Similarly to ALU operations, some intrinsics are vectorized.
+    * An intrinsic is vectorized if nir_intrinsic_infos.dest_components == 0.
+    * For vectorized intrinsics, the num_components field specifies the
+    * number of destination components and the number of source components
+    * for all sources with nir_intrinsic_infos.src_components[i] == 0.
+    */
    uint8_t num_components;
 
    int const_index[3];
