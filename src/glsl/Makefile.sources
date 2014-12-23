@@ -14,7 +14,9 @@ LIBGLCPP_GENERATED_FILES = \
 	$(GLSL_BUILDDIR)/glcpp/glcpp-parse.c
 
 NIR_GENERATED_FILES = \
-	$(GLSL_BUILDDIR)/nir/nir_opt_algebraic.c
+	$(GLSL_BUILDDIR)/nir/nir_opt_algebraic.c \
+	$(GLSL_BUILDDIR)/nir/nir_opcodes.h \
+	$(GLSL_BUILDDIR)/nir/nir_opcodes.c
 
 NIR_FILES = \
 	$(GLSL_SRCDIR)/nir/nir.c \
@@ -35,8 +37,6 @@ NIR_FILES = \
 	$(GLSL_SRCDIR)/nir/nir_lower_var_copies.c \
 	$(GLSL_SRCDIR)/nir/nir_lower_vec_to_movs.c \
 	$(GLSL_SRCDIR)/nir/nir_metadata.c \
-	$(GLSL_SRCDIR)/nir/nir_opcodes.c \
-	$(GLSL_SRCDIR)/nir/nir_opcodes.h \
 	$(GLSL_SRCDIR)/nir/nir_opt_constant_folding.c \
 	$(GLSL_SRCDIR)/nir/nir_opt_copy_propagate.c \
 	$(GLSL_SRCDIR)/nir/nir_opt_cse.c \

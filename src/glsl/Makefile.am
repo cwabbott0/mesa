@@ -27,6 +27,7 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/src/glsl/glcpp \
 	-I$(top_srcdir)/src/glsl/nir \
 	-I$(top_srcdir)/src/gtest/include \
+	-I$(top_builddir)/src/glsl/nir \
 	$(DEFINES)
 AM_CFLAGS = $(VISIBILITY_CFLAGS)
 AM_CXXFLAGS = $(VISIBILITY_CXXFLAGS)
@@ -207,7 +208,9 @@ BUILT_SOURCES =						\
 	glsl_lexer.cpp					\
 	glcpp/glcpp-parse.c				\
 	glcpp/glcpp-lex.c				\
-	nir/nir_opt_algebraic.c
+	nir/nir_opt_algebraic.c				\
+	nir/nir_opcodes.h				\
+	nir/nir_opcodes.c
 CLEANFILES =						\
 	glcpp/glcpp-parse.h				\
 	glsl_parser.h					\
@@ -223,3 +226,13 @@ dist-hook:
 nir/nir_opt_algebraic.c: nir/nir_opt_algebraic.py nir/nir_algebraic.py
 	$(MKDIR_P) nir;							\
 	$(PYTHON2) $(PYTHON_FLAGS) $(srcdir)/nir/nir_opt_algebraic.py > $@
+
+nir/nir_opcodes.h: nir/nir_opcodes.py nir/nir_opcodes_h.py
+	$(MKDIR_P) nir;							\
+	$(PYTHON2) $(PYTHON_FLAGS) $(srcdir)/nir/nir_opcodes_h.py > $@
+
+nir/nir_opcodes.c: nir/nir_opcodes.py nir/nir_opcodes_c.py
+	$(MKDIR_P) nir;							\
+	$(PYTHON2) $(PYTHON_FLAGS) $(srcdir)/nir/nir_opcodes_c.py > $@
+
+nir/nir.h: nir/nir_opcodes.h
