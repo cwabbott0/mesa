@@ -532,19 +532,10 @@ typedef struct {
    unsigned write_mask : 4; /* ignored if dest.is_ssa is true */
 } nir_alu_dest;
 
-#define OPCODE(name, num_inputs, output_size, output_type, \
-               input_sizes, input_types, algebraic_props) \
-   nir_op_##name,
-
-#define LAST_OPCODE(name) nir_last_opcode = nir_op_##name,
-
 typedef enum {
 #include "nir_opcodes.h"
    nir_num_opcodes = nir_last_opcode + 1
 } nir_op;
-
-#undef OPCODE
-#undef LAST_OPCODE
 
 typedef enum {
    nir_type_float,
