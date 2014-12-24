@@ -16,7 +16,8 @@ LIBGLCPP_GENERATED_FILES = \
 NIR_GENERATED_FILES = \
 	$(GLSL_BUILDDIR)/nir/nir_opt_algebraic.c \
 	$(GLSL_BUILDDIR)/nir/nir_opcodes.h \
-	$(GLSL_BUILDDIR)/nir/nir_opcodes.c
+	$(GLSL_BUILDDIR)/nir/nir_opcodes.c \
+	$(GLSL_BUILDDIR)/nir/nir_constant_expressions.c
 
 NIR_FILES = \
 	$(GLSL_SRCDIR)/nir/nir.c \

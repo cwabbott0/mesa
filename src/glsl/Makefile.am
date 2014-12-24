@@ -210,7 +210,8 @@ BUILT_SOURCES =						\
 	glcpp/glcpp-lex.c				\
 	nir/nir_opt_algebraic.c				\
 	nir/nir_opcodes.h				\
-	nir/nir_opcodes.c
+	nir/nir_opcodes.c				\
+	nir/nir_constant_expressions.c
 CLEANFILES =						\
 	glcpp/glcpp-parse.h				\
 	glsl_parser.h					\
@@ -236,3 +237,10 @@ nir/nir_opcodes.c: nir/nir_opcodes.py nir/nir_opcodes_c.py
 	$(PYTHON2) $(PYTHON_FLAGS) $(srcdir)/nir/nir_opcodes_c.py > $@
 
 nir/nir.h: nir/nir_opcodes.h
+
+nir/nir_constant_expressions.c: nir/nir_opcodes.py nir/nir_constant_expressions.py nir/nir_constant_expressions.h
+	$(AM_V_GEN)set -e;							\
+	$(MKDIR_P) `dirname $@`;						\
+	$(PYTHON2) $(PYTHON_FLAGS) $(srcdir)/nir/nir_constant_expressions.py > $@.tmp;	\
+	mv $@.tmp $@;
+
