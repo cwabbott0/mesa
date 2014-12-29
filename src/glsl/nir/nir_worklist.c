@@ -28,44 +28,30 @@
 #include "nir_worklist.h"
 
 void
-nir_block_worklist_init(nir_block_worklist *w, unsigned num_blocks,
-                        void *mem_ctx)
+nir_worklist_init(nir_worklist *w, unsigned num_entries,
+                  void *mem_ctx)
 {
-   w->size = num_blocks;
+   w->size = num_entries;
    w->count = 0;
    w->start = 0;
 
-   w->blocks_present = rzalloc_array(mem_ctx, BITSET_WORD,
-                                     BITSET_WORDS(num_blocks));
-   w->blocks = ralloc_array(mem_ctx, nir_block *, num_blocks);
+   w->entries_present = rzalloc_array(mem_ctx, BITSET_WORD,
+                                     BITSET_WORDS(num_entries));
+   w->entries = ralloc_array(mem_ctx, void *, num_entries);
 }
 
 void
-nir_block_worklist_fini(nir_block_worklist *w)
+nir_worklist_fini(nir_worklist *w)
 {
-   ralloc_free(w->blocks_present);
-   ralloc_free(w->blocks);
-}
-
-static bool
-worklist_add_block(nir_block *block, void *w)
-{
-   nir_block_worklist_push_tail(w, block);
-
-   return true;
+   ralloc_free(w->entries_present);
+   ralloc_free(w->entries);
 }
 
 void
-nir_block_worklist_add_all(nir_block_worklist *w, nir_function_impl *impl)
+nir_worklist_push_head(nir_worklist *w, void *entry, unsigned idx)
 {
-   nir_foreach_block(impl, worklist_add_block, w);
-}
-
-void
-nir_block_worklist_push_head(nir_block_worklist *w, nir_block *block)
-{
-   /* Pushing a block we already have is a no-op */
-   if (BITSET_TEST(w->blocks_present, block->index))
+   /* Pushing an entry we already have is a no-op */
+   if (BITSET_TEST(w->entries_present, idx))
       return;
 
    assert(w->count < w->size);
@@ -77,20 +63,20 @@ nir_block_worklist_push_head(nir_block_worklist *w, nir_block *block)
 
    w->count++;
 
-   w->blocks[w->start] = block;
-   BITSET_SET(w->blocks_present, block->index);
+   w->entries[w->start] = entry;
+   BITSET_SET(w->entries_present, idx);
 }
 
-nir_block *
-nir_block_worklist_peek_head(nir_block_worklist *w)
+void *
+nir_worklist_peek_head(nir_worklist *w)
 {
    assert(w->count > 0);
 
-   return w->blocks[w->start];
+   return w->entries[w->start];
 }
 
-nir_block *
-nir_block_worklist_pop_head(nir_block_worklist *w)
+void *
+nir_worklist_pop_head(nir_worklist *w, unsigned idx)
 {
    assert(w->count > 0);
 
@@ -99,15 +85,15 @@ nir_block_worklist_pop_head(nir_block_worklist *w)
    w->start = (w->start + 1) % w->size;
    w->count--;
    
-   BITSET_CLEAR(w->blocks_present, w->blocks[head]->index);
-   return w->blocks[head];
+   BITSET_CLEAR(w->entries_present, idx);
+   return w->entries[head];
 }
 
 void
-nir_block_worklist_push_tail(nir_block_worklist *w, nir_block *block)
+nir_worklist_push_tail(nir_worklist *w, void *entry, unsigned idx)
 {
    /* Pushing a block we already have is a no-op */
-   if (BITSET_TEST(w->blocks_present, block->index))
+   if (BITSET_TEST(w->entries_present, idx))
       return;
 
    assert(w->count < w->size);
@@ -116,22 +102,22 @@ nir_block_worklist_push_tail(nir_block_worklist *w, nir_block *block)
 
    unsigned tail = w->start = (w->start + w->count - 1) % w->size;
 
-   w->blocks[tail] = block;
-   BITSET_SET(w->blocks_present, block->index);
+   w->entries[tail] = entry;
+   BITSET_SET(w->entries_present, idx);
 }
 
-nir_block *
-nir_block_worklist_peek_tail(nir_block_worklist *w)
+void *
+nir_worklist_peek_tail(nir_worklist *w)
 {
    assert(w->count > 0);
 
    unsigned tail = w->start = (w->start + w->count - 1) % w->size;
 
-   return w->blocks[tail];
+   return w->entries[tail];
 }
 
-nir_block *
-nir_block_worklist_pop_tail(nir_block_worklist *w)
+void *
+nir_worklist_pop_tail(nir_worklist *w, unsigned idx)
 {
    assert(w->count > 0);
 
@@ -139,6 +125,6 @@ nir_block_worklist_pop_tail(nir_block_worklist *w)
 
    w->count--;
 
-   BITSET_CLEAR(w->blocks_present, w->blocks[tail]->index);
-   return w->blocks[tail];
+   BITSET_CLEAR(w->entries_present, idx);
+   return w->entries[tail];
 }

@@ -36,53 +36,54 @@
 extern "C" {
 #endif
 
-/** Represents a double-ended queue of unique blocks
+/** Represents a double-ended queue of unique indexed entries
  *
- * The worklist datastructure guarantees that eacy block is in the queue at
- * most once.  Pushing a block onto either end of the queue is a no-op if
- * the block is already in the queue.  In order for this to work, the
- * caller must ensure that the blocks are properly indexed.
+ * The worklist datastructure guarantees that each entry is in the queue at
+ * most once.  Pushing an entry onto either end of the queue is a no-op if
+ * the entry is already in the queue.  In order for this to work, the entries
+ * must have an index that's given to the worker functions.
  */
 typedef struct {
    /* The total size of the worklist */
    unsigned size;
 
-   /* The number of blocks currently in the worklist */
+   /* The number of entries currently in the worklist */
    unsigned count;
 
-   /* The offset in the array of blocks at which the list starts */
+   /* The offset in the array of entries at which the list starts */
    unsigned start;
 
-   /* A bitset of all of the blocks currently present in the worklist */
-   BITSET_WORD *blocks_present;
+   /* A bitset of all of the entries currently present in the worklist */
+   BITSET_WORD *entries_present;
 
    /* The actual worklist */
-   nir_block **blocks;
-} nir_block_worklist;
+   void **entries;
+} nir_worklist;
 
-void nir_block_worklist_init(nir_block_worklist *w, unsigned num_blocks,
-                             void *mem_ctx);
-void nir_block_worklist_fini(nir_block_worklist *w);
+void nir_worklist_init(nir_worklist *w, unsigned num_entries,
+                       void *mem_ctx);
+void nir_worklist_fini(nir_worklist *w);
 
-void nir_block_worklist_add_all(nir_block_worklist *w, nir_function_impl *impl);
 
 static inline bool
-nir_block_worklist_is_empty(const nir_block_worklist *w)
+nir_worklist_is_empty(const nir_worklist *w)
 {
    return w->count == 0;
 }
 
-void nir_block_worklist_push_head(nir_block_worklist *w, nir_block *block);
+void nir_worklist_push_head(nir_worklist *w, void *entry, unsigned idx);
 
-nir_block *nir_block_worklist_peek_head(nir_block_worklist *w);
+void *nir_worklist_peek_head(nir_worklist *w);
 
-nir_block *nir_block_worklist_pop_head(nir_block_worklist *w);
+/* note that peek_head() must be called first to get the index */
+void *nir_worklist_pop_head(nir_worklist *w, unsigned idx);
 
-void nir_block_worklist_push_tail(nir_block_worklist *w, nir_block *block);
+void nir_worklist_push_tail(nir_worklist *w, void *entry, unsigned idx);
 
-nir_block *nir_block_worklist_peek_tail(nir_block_worklist *w);
+void *nir_worklist_peek_tail(nir_worklist *w);
 
-nir_block *nir_block_worklist_pop_tail(nir_block_worklist *w);
+/* note that peek_tail() must be called first to get the index */
+void *nir_worklist_pop_tail(nir_worklist *w, unsigned idx);
 
 #ifdef __cplusplus
 } /* extern "C" */

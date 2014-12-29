@@ -25,7 +25,7 @@
  */
 
 #include "nir.h"
-#include "nir_worklist.h"
+#include "nir_block_worklist.h"
 
 /*
  * Basic liveness analysis.  This works only in SSA form.
