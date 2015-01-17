@@ -37,10 +37,8 @@ d = 'd'
 # defined as a tuple of the form (<op>, <src0>, <src1>, <src2>, <src3>)
 # where each source is either an expression or a value.  A value can be
 # either a numeric constant or a string representing a variable name.  For
-# constants, you have to be careful to make sure that it is the right type
-# because python is unaware of the source and destination types of the
-# opcodes.
-
+# constants, you must use the correct type for the opcode or there will be an
+# assertion failure when generating the pass.
 optimizations = [
    (('fneg', ('fneg', a)), a),
    (('ineg', ('ineg', a)), a),

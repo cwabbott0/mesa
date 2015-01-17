@@ -28,6 +28,7 @@ import itertools
 import struct
 import sys
 import mako.template
+from nir_opcodes import opcodes
 
 # Represents a set of variables, each with a unique id
 class VarSet(object):
@@ -43,7 +44,7 @@ class VarSet(object):
 
 class Value(object):
    @staticmethod
-   def create(val, name_base, varset):
+   def create(val, name_base, type_, varset):
       if isinstance(val, tuple):
          return Expression(val, name_base, varset)
       elif isinstance(val, Expression):
@@ -51,7 +52,7 @@ class Value(object):
       elif isinstance(val, (str, unicode)):
          return Variable(val, name_base, varset)
       elif isinstance(val, (bool, int, long, float)):
-         return Constant(val, name_base)
+         return Constant(val, name_base, type_)
 
    __template = mako.template.Template("""
 static const ${val.c_type} ${val.name} = {
@@ -89,19 +90,35 @@ static const ${val.c_type} ${val.name} = {
                                     Expression=Expression)
 
 class Constant(Value):
-   def __init__(self, val, name):
+   def __init__(self, val, name, type_):
       Value.__init__(self, name, "constant")
       self.value = val
+      if type_ == "unknown":
+         if isinstance(self.value, (bool)):
+            self.type_ = "bool"
+         if isinstance(self.value, (int, long)):
+            self.type_ = "int"
+         elif isinstance(self.value, float):
+            self.type_ = "float"           
+      else:
+         if self.type_ == "bool":
+            assert isinstance(self.value, (bool))
+         elif self.type_ == "int" or self.type_ == "unsigned":
+            assert isinstance(self.value, (int, long)
+         elif self.type_ == "float":
+            assert isinstance(self.value, (float))
+         else:
+            assert False
 
    def __hex__(self):
       # Even if it's an integer, we still need to unpack as an unsigned
       # int.  This is because, without C99, we can only assign to the first
       # element of a union in an initializer.
-      if isinstance(self.value, (bool)):
+      if self.type_ == "bool":
          return 'NIR_TRUE' if self.value else 'NIR_FALSE'
-      if isinstance(self.value, (int, long)):
+      if self.type_ == "int" or type == "unsigned":
          return hex(struct.unpack('I', struct.pack('i', self.value))[0])
-      elif isinstance(self.value, float):
+      elif self.type_ == "float":
          return hex(struct.unpack('I', struct.pack('f', self.value))[0])
       else:
          assert False
@@ -119,7 +136,11 @@ class Expression(Value):
       assert isinstance(expr, tuple)
 
       self.opcode = expr[0]
-      self.sources = [ Value.create(src, "{0}_{1}".format(name_base, i), varset)
+      assert self.opcode in opcodes
+
+      opcode_info = opcodes[self.opcode]
+      self.sources = [ Value.create(src, "{0}_{1}".format(name_base, i),
+                                    opcode_info.input_types[i], varset)
                        for (i, src) in enumerate(expr[1:]) ]
 
    def render(self):
@@ -141,7 +162,8 @@ class SearchAndReplace(object):
       if isinstance(replace, Value):
          self.replace = replace
       else:
-         self.replace = Value.create(replace, "replace{0}".format(self.id), varset)
+         self.replace = Value.create(replace, "replace{0}".format(self.id),
+                                     varset, "unknown")
 
 _algebraic_pass_template = mako.template.Template("""
 #include "nir.h"
