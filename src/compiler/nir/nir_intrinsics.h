@@ -330,6 +330,20 @@ SYSTEM_VALUE(channel_num, 1, 0, xx, xx, xx)
 SYSTEM_VALUE(alpha_ref_float, 1, 0, xx, xx, xx)
 SYSTEM_VALUE(layer_id, 1, 0, xx, xx, xx)
 SYSTEM_VALUE(view_index, 1, 0, xx, xx, xx)
+SYSTEM_VALUE(subgroup_invocation, 1, 0, xx, xx, xx)
+
+
+/* ARB_shader_ballot instructions */
+
+SYSTEM_VALUE(subgroup_eq_mask, 1, 0, xx, xx, xx)
+SYSTEM_VALUE(subgroup_ge_mask, 1, 0, xx, xx, xx)
+SYSTEM_VALUE(subgroup_gt_mask, 1, 0, xx, xx, xx)
+SYSTEM_VALUE(subgroup_le_mask, 1, 0, xx, xx, xx)
+SYSTEM_VALUE(subgroup_lt_mask, 1, 0, xx, xx, xx)
+
+INTRINSIC(ballot, 1, ARR(0), true, 0, 0, 0, xx, xx, xx,
+          NIR_INTRINSIC_CAN_ELIMINATE | NIR_INTRINSIC_CAN_REORDER |
+          NIR_INTRINSIC_CROSS_THREAD)
 
 /* Blend constant color values.  Float values are clamped. */
 SYSTEM_VALUE(blend_const_color_r_float, 1, 0, xx, xx, xx)

@@ -120,8 +120,10 @@ def opcode(name, output_size, output_type, input_sizes, input_types,
                           input_types, convergent, cross_thread,
                           algebraic_properties, const_expr)
 
-def unop_convert(name, out_type, in_type, const_expr):
-   opcode(name, 0, out_type, [0], [in_type], "", const_expr)
+def unop_convert(name, out_type, in_type, const_expr, cross_thread=False,
+                 convergent=False):
+   opcode(name, 0, out_type, [0], [in_type], "", const_expr, convergent,
+          cross_thread)
 
 def unop(name, ty, const_expr, convergent=False, cross_thread=False):
    opcode(name, 0, ty, [0], [ty], "", const_expr, convergent, cross_thread)
@@ -354,6 +356,18 @@ for (unsigned bit = 0; bit < 32; bit++) {
 for i in xrange(1, 5):
    for j in xrange(1, 5):
       unop_horiz("fnoise{0}_{1}".format(i, j), i, tfloat, j, tfloat, "0.0f")
+
+# ARB_shader_ballot instructions
+
+opcode("read_invocation", 0, tuint, [0, 1], [tuint, tuint32], "", "src0",
+        cross_thread=True)
+unop("read_first_invocation", tuint, "src0", cross_thread=True)
+
+# ARB_shader_group_vote instructions
+
+unop("any_invocations", tbool, "src0", cross_thread=True)
+unop("all_invocations", tbool, "src0", cross_thread=True) 
+unop("all_invocations_equal", tbool, "true", cross_thread=True)
 
 def binop_convert(name, out_type, in_type, alg_props, const_expr):
    opcode(name, 0, out_type, [0, 0], [in_type, in_type], alg_props, const_expr)
