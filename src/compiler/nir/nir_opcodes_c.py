@@ -108,6 +108,8 @@ const nir_op_info nir_op_infos[nir_num_opcodes] = {
    .input_types = {
       ${ ", ".join("nir_type_" + type for type in opcode.input_types) }
    },
+   .convergent = ${str(opcode.convergent).lower()},
+   .cross_thread = ${str(opcode.cross_thread).lower()},
    .algebraic_properties =
       ${ "0" if opcode.algebraic_properties == "" else " | ".join(
             "NIR_OP_IS_" + prop.upper() for prop in

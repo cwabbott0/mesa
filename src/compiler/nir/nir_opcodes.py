@@ -32,7 +32,8 @@ class Opcode(object):
    NOTE: this must be kept in sync with nir_op_info
    """
    def __init__(self, name, output_size, output_type, input_sizes,
-                input_types, algebraic_properties, const_expr):
+                input_types, convergent, cross_thread, algebraic_properties,
+                const_expr):
       """Parameters:
 
       - name is the name of the opcode (prepend nir_op_ for the enum name)
@@ -40,6 +41,7 @@ class Opcode(object):
       - input_types is a list of types
       - algebraic_properties is a space-seperated string, where nir_op_is_ is
         prepended before each entry
+      - convergent and cross_thread are booleans
       - const_expr is an expression or series of statements that computes the
         constant value of the opcode given the constant values of its inputs.
 
@@ -70,6 +72,10 @@ class Opcode(object):
       assert isinstance(input_types, list)
       assert isinstance(input_types[0], str)
       assert isinstance(algebraic_properties, str)
+      assert isinstance(convergent, bool)
+      assert isinstance(cross_thread, bool)
+      if convergent:
+          cross_thread = True
       assert isinstance(const_expr, str)
       assert len(input_sizes) == len(input_types)
       assert 0 <= output_size <= 4
@@ -83,6 +89,8 @@ class Opcode(object):
       self.output_type = output_type
       self.input_sizes = input_sizes
       self.input_types = input_types
+      self.convergent = convergent
+      self.cross_thread = cross_thread
       self.algebraic_properties = algebraic_properties
       self.const_expr = const_expr
 
@@ -105,16 +113,18 @@ associative = "associative "
 opcodes = {}
 
 def opcode(name, output_size, output_type, input_sizes, input_types,
-           algebraic_properties, const_expr):
+           algebraic_properties, const_expr, convergent=False,
+           cross_thread=False):
    assert name not in opcodes
    opcodes[name] = Opcode(name, output_size, output_type, input_sizes,
-                          input_types, algebraic_properties, const_expr)
+                          input_types, convergent, cross_thread,
+                          algebraic_properties, const_expr)
 
 def unop_convert(name, out_type, in_type, const_expr):
    opcode(name, 0, out_type, [0], [in_type], "", const_expr)
 
-def unop(name, ty, const_expr):
-   opcode(name, 0, ty, [0], [ty], "", const_expr)
+def unop(name, ty, const_expr, convergent=False, cross_thread=False):
+   opcode(name, 0, ty, [0], [ty], "", const_expr, convergent, cross_thread)
 
 def unop_horiz(name, output_size, output_type, input_size, input_type,
                const_expr):
@@ -211,12 +221,12 @@ unop("fcos", tfloat, "bit_size == 64 ? cos(src0) : cosf(src0)")
 # Partial derivatives.
 
 
-unop("fddx", tfloat, "0.0") # the derivative of a constant is 0.
-unop("fddy", tfloat, "0.0")
-unop("fddx_fine", tfloat, "0.0")
-unop("fddy_fine", tfloat, "0.0")
-unop("fddx_coarse", tfloat, "0.0")
-unop("fddy_coarse", tfloat, "0.0")
+unop("fddx", tfloat, "0.0", convergent=True) # the derivative of a constant is 0.
+unop("fddy", tfloat, "0.0", convergent=True)
+unop("fddx_fine", tfloat, "0.0", convergent=True)
+unop("fddy_fine", tfloat, "0.0", convergent=True)
+unop("fddx_coarse", tfloat, "0.0", convergent=True)
+unop("fddy_coarse", tfloat, "0.0", convergent=True)
 
 
 # Floating point pack and unpack operations.

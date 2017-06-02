@@ -774,6 +774,25 @@ typedef struct {
     */
    nir_alu_type input_types[4];
 
+   /**
+    * Indicates whether this ALU operation is "cross-thread". An operation is
+    * convergent if results in one thread depend on inputs in another thread,
+    * and therefore optimizations cannot change the execution mask when the
+    * operation is called. Examples of cross-thread operations include
+    * screen-space derivatives, the "any" reduction which returns "true" in
+    * all threads if any thread inputs "true", etc.
+    */
+   bool cross_thread;
+
+   /**
+    * Indicates that this ALU operation is "convergent". An operation is
+    * convergent when it must always be called in convergent control flow,
+    * that is, control flow with the same execution mask as when the program
+    * started. If an operation is convergent, it must be cross-thread as well,
+    * since the optimizer must maintain the guarantee.
+    */
+   bool convergent;
+
    nir_op_algebraic_property algebraic_properties;
 } nir_op_info;
 
@@ -985,6 +1004,17 @@ typedef enum {
     * intrinsic are due to the register reads/writes.
     */
    NIR_INTRINSIC_CAN_REORDER = (1 << 1),
+
+   /**
+    * Whether the intrinsic is cross-thread. See the definition in
+    * nir_op_infos.
+    */
+   NIR_INTRINSIC_CROSS_THREAD,
+
+   /**
+    * Whether the intrinsic is convergent. See the definition in nir_op_infos.
+    */
+   NIR_INTRINSIC_CONVERGENT,
 } nir_intrinsic_semantic_flag;
 
 /**
@@ -1076,7 +1106,7 @@ typedef struct {
    unsigned num_indices;
 
    /** indicates the usage of intr->const_index[n] */
-   unsigned index_map[NIR_INTRINSIC_NUM_INDEX_FLAGS];
+   unsigned index_map[NIR_INTRINSIC_NUM_INDEX_FLAGS]; 
 
    /** semantic flags for calls to this intrinsic */
    nir_intrinsic_semantic_flag flags;
@@ -1457,6 +1487,62 @@ NIR_DEFINE_CAST(nir_instr_as_phi, nir_instr, nir_phi_instr, instr,
 NIR_DEFINE_CAST(nir_instr_as_parallel_copy, nir_instr,
                 nir_parallel_copy_instr, instr,
                 type, nir_instr_type_parallel_copy)
+
+/*
+ * Helpers to determine if an instruction is cross-thread or convergent. See
+ * the definitions in nir_op_info.
+ */
+static inline bool
+nir_instr_is_convergent(const nir_instr *instr)
+{
+   switch (instr->type) {
+   case nir_instr_type_alu: {
+      nir_alu_instr *alu = nir_instr_as_alu(instr);
+      return nir_op_infos[alu->op].convergent;
+   }
+
+   case nir_instr_type_intrinsic: {
+      nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+      return nir_intrinsic_infos[intrin->intrinsic].flags &
+         NIR_INTRINSIC_CONVERGENT;
+   }
+
+   case nir_instr_type_tex:
+         switch (nir_instr_as_tex(instr)->op) {
+         case nir_texop_tex:
+         case nir_texop_txb:
+         case nir_texop_lod:
+            /* These two take implicit derivatives */
+            return true;
+
+         default:
+            return false;
+         }
+
+   default:
+      return false;
+   }
+}
+
+static inline bool
+nir_instr_is_cross_thread(const nir_instr *instr)
+{
+   switch (instr->type) {
+   case nir_instr_type_alu: {
+      nir_alu_instr *alu = nir_instr_as_alu(instr);
+      return nir_op_infos[alu->op].cross_thread;
+   }
+
+   case nir_instr_type_intrinsic: {
+      nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+      return nir_intrinsic_infos[intrin->intrinsic].flags &
+         NIR_INTRINSIC_CROSS_THREAD;
+   }
+
+   default:
+      return nir_instr_is_convergent(instr);
+   }
+}
 
 /*
  * Control flow
