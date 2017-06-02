@@ -178,6 +178,18 @@ hash_instr(const void *data)
    const nir_instr *instr = data;
    uint32_t hash = _mesa_fnv32_1a_offset_bias;
 
+   /*
+    * If an instruction is cross-thread but not convergent, hash its block. If
+    * an instruction is convergent, then we can always replace one invocation
+    * with another since every invocation is guaranteed convergent. But not so
+    * for non-convergent instructions, since different invocations may be
+    * called with different execution maskes and therefore have different
+    * results.
+    */
+   if (nir_instr_is_cross_thread(instr) && !nir_instr_is_convergent(instr)) {
+      HASH(hash, instr->block);
+   }
+
    switch (instr->type) {
    case nir_instr_type_alu:
       hash = hash_alu(hash, nir_instr_as_alu(instr));
