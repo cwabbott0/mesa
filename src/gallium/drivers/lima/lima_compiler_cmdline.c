@@ -33,7 +33,7 @@
 
 #include "lima_program.h"
 #include "lima_context.h"
-#include "ir/gp/nir.h"
+#include "ir/lima_ir.h"
 
 static void
 print_usage(void)
@@ -214,14 +214,27 @@ main(int argc, char **argv)
    //nir_print_shader(nir, stdout);
 //*/
 
-   lima_program_optimize_nir(nir);
-   printf("\nlima_optimize_nir\n");
-   //nir_print_shader(nir, stdout);
+   switch (stage) {
+   case MESA_SHADER_VERTEX:
+      lima_program_optimize_vs_nir(nir);
 
-   nir_print_shader(nir, stdout);
+      nir_print_shader(nir, stdout);
 
-   struct lima_vs_shader_state *vs = ralloc(nir, struct lima_vs_shader_state);
-   gpir_compile_nir(vs, nir);
+      struct lima_vs_shader_state *vs = ralloc(nir, struct lima_vs_shader_state);
+      gpir_compile_nir(vs, nir);
+      break;
+   case MESA_SHADER_FRAGMENT:
+      lima_program_optimize_fs_nir(nir);
+
+      nir_print_shader(nir, stdout);
+
+      struct lima_fs_shader_state *so = rzalloc(NULL, struct lima_fs_shader_state);
+      struct ra_regs *ra = ppir_regalloc_init(NULL);
+      ppir_compile_nir(so, nir, ra);
+      break;
+   default:
+      errx(1, "unhandled shader stage: %d", stage);
+   }
 
    ralloc_free(nir);
    return 0;

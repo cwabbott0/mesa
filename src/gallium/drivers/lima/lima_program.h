@@ -29,4 +29,10 @@
 
 const void *lima_program_get_compiler_options(enum pipe_shader_type shader);
 
+struct nir_shader;
+
+void lima_program_optimize_vs_nir(struct nir_shader *s);
+
+void lima_program_optimize_fs_nir(struct nir_shader *s);
+
 #endif

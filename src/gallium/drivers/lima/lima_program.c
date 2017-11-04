@@ -70,7 +70,7 @@ type_size(const struct glsl_type *type)
    return glsl_count_attribute_slots(type, false);
 }
 
-static void
+void
 lima_program_optimize_vs_nir(struct nir_shader *s)
 {
    bool progress;
@@ -106,7 +106,7 @@ lima_program_optimize_vs_nir(struct nir_shader *s)
    nir_sweep(s);
 }
 
-static void
+void
 lima_program_optimize_fs_nir(struct nir_shader *s)
 {
    bool progress;
