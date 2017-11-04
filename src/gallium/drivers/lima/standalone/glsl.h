@@ -22,19 +22,15 @@
  *
  */
 
-#ifndef H_LIMA_PROGRAM
-#define H_LIMA_PROGRAM
-
-#include "pipe/p_defines.h"
-
-const void *lima_program_get_compiler_options(enum pipe_shader_type shader);
-
-bool lima_update_vs_state(struct lima_context *ctx);
-bool lima_update_fs_state(struct lima_context *ctx);
-struct nir_shader;
-
-void lima_program_optimize_vs_nir(struct nir_shader *s);
-
-void lima_program_optimize_fs_nir(struct nir_shader *s);
-
+#ifdef __cplusplus
+extern "C" {
 #endif
+
+void lima_do_glsl_optimizations(struct exec_list *ir);
+
+int st_glsl_type_size(const struct glsl_type *type);
+
+#ifdef __cplusplus
+}
+#endif
+

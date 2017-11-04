@@ -29,6 +29,13 @@ AM_CFLAGS = \
 	$(GALLIUM_DRIVER_CFLAGS) \
 	$(LIBDRM_CFLAGS)
 
+AM_CXXFLAGS = \
+	-I$(top_srcdir)/include/drm-uapi \
+	-I$(top_builddir)/src/compiler/nir \
+	-I$(top_srcdir)/src/compiler/nir \
+	$(GALLIUM_DRIVER_CXXFLAGS) \
+	$(LIBDRM_CXXFLAGS)
+
 noinst_LTLIBRARIES = liblima.la
 
 liblima_la_SOURCES = $(C_SOURCES)
@@ -36,10 +43,17 @@ liblima_la_SOURCES = $(C_SOURCES)
 noinst_PROGRAMS = lima_compiler
 
 lima_compiler_SOURCES = \
-	lima_compiler_cmdline.c
+	standalone/lima_compiler_cmdline.c \
+	standalone/glsl.cpp
 
 lima_compiler_CFLAGS = \
 	$(AM_CFLAGS) \
+	-I$(top_srcdir)/src/mesa \
+	-I$(top_srcdir)/src/mapi
+
+lima_compiler_CXXFLAGS = \
+	$(AM_CXXFLAGS) \
+	-I$(top_srcdir)/src \
 	-I$(top_srcdir)/src/mesa \
 	-I$(top_srcdir)/src/mapi
 
