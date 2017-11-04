@@ -139,19 +139,15 @@ main(int argc, char **argv)
    NIR_PASS_V(nir, nir_lower_io_to_temporaries,
               nir_shader_get_entrypoint(nir),
               true, true);
-   printf("\nnir_lower_io_to_temporaries\n");
    //nir_print_shader(nir, stdout);
 
    NIR_PASS_V(nir, nir_lower_global_vars_to_local);
-   printf("\nnir_lower_global_vars_to_local\n");
    //nir_print_shader(nir, stdout);
 
    NIR_PASS_V(nir, nir_split_var_copies);
-   printf("\nnir_split_var_copies\n");
    //nir_print_shader(nir, stdout);
 
    NIR_PASS_V(nir, nir_lower_var_copies);
-   printf("\nnir_lower_var_copies\n");
    //nir_print_shader(nir, stdout);
 
    //NIR_PASS_V(nir, st_nir_lower_builtin);
@@ -161,7 +157,6 @@ main(int argc, char **argv)
    NIR_PASS_V(nir, nir_split_var_copies);
    NIR_PASS_V(nir, nir_lower_var_copies);
    NIR_PASS_V(nir, nir_lower_io_types);
-   printf("\nnir_lower_io_types\n");
    //nir_print_shader(nir, stdout);
 
    switch (stage) {
@@ -192,25 +187,20 @@ main(int argc, char **argv)
    default:
       errx(1, "unhandled shader stage: %d", stage);
    }
-   printf("\nfixup_varying_slots\n");
    //nir_print_shader(nir, stdout);
 
    nir_assign_var_locations(&nir->uniforms,
                             &nir->num_uniforms,
                             st_glsl_type_size);
-   printf("\nnir_assign_var_locations\n");
    //nir_print_shader(nir, stdout);
 
    NIR_PASS_V(nir, nir_lower_system_values);
-   printf("\nnir_lower_system_values\n");
    //nir_print_shader(nir, stdout);
 
    NIR_PASS_V(nir, nir_lower_io, nir_var_all, st_glsl_type_size, 0);
-   printf("\nnir_lower_io\n");
    //nir_print_shader(nir, stdout);
 
    NIR_PASS_V(nir, nir_lower_samplers, prog);
-   printf("\nnir_lower_samplers\n");
    //nir_print_shader(nir, stdout);
 
 /*
