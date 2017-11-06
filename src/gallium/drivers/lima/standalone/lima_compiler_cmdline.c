@@ -34,6 +34,7 @@
 #include "lima_program.h"
 #include "lima_context.h"
 #include "ir/lima_ir.h"
+#include "standalone/glsl.h"
 
 static void
 print_usage(void)
@@ -82,10 +83,14 @@ fixup_varying_slots(struct exec_list *var_list)
 int
 main(int argc, char **argv)
 {
-   int n = 1;
+   int n;
 
-   while (n < argc) {
-      if (!strcmp(argv[n], "--help")) {
+   for (n = 1; n < argc; n++) {
+      if (!strcmp(argv[n], "--debug")) {
+         lima_shader_debug_gp = true;
+         lima_shader_debug_pp = true;
+         continue;
+      } else if (!strcmp(argv[n], "--help")) {
          print_usage();
          return 0;
       }
@@ -121,6 +126,8 @@ main(int argc, char **argv)
    prog = standalone_compile_shader(&options, 1, filename);
    if (!prog)
       errx(1, "couldn't parse `%s'", filename[0]);
+
+   lima_do_glsl_optimizations(prog->_LinkedShaders[stage]->ir);
 
    nir_shader *nir = glsl_to_nir(prog, stage,
                                  lima_program_get_compiler_options(shader));
