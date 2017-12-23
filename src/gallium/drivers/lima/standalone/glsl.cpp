@@ -33,3 +33,9 @@ lima_do_glsl_optimizations(struct exec_list *ir)
    do_mat_op_to_vec(ir);
    _mesa_print_ir(stdout, ir, NULL);
 }
+
+int
+st_glsl_type_size(const glsl_type *type)
+{
+   return type->count_attribute_slots(false);
+}
