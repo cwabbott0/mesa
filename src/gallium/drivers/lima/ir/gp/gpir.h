@@ -176,6 +176,7 @@ typedef struct gpir_node {
       } rsched;
       struct {
          float index;
+         int dist;
          struct gpir_node *last;
       } vreg;
       struct {
@@ -367,6 +368,8 @@ static inline bool gpir_node_is_leaf(gpir_node *node)
 #define gpir_node_to_const(node) ((gpir_const_node *)(node))
 #define gpir_node_to_load(node) ((gpir_load_node *)(node))
 #define gpir_node_to_store(node) ((gpir_store_node *)(node))
+
+int gpir_get_min_dist(gpir_dep *dep);
 
 gpir_instr *gpir_instr_create(gpir_block *block);
 bool gpir_instr_try_insert_node(gpir_instr *instr, gpir_node *node);

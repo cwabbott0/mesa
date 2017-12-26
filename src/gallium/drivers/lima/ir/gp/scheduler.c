@@ -96,7 +96,7 @@ static int gpir_min_dist_alu(gpir_dep *dep)
    }
 }
 
-static int gpir_get_min_dist(gpir_dep *dep)
+int gpir_get_min_dist(gpir_dep *dep)
 {
    switch (dep->type) {
    case GPIR_DEP_INPUT:

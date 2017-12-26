@@ -50,6 +50,7 @@ static int regalloc_spill_active_node(gpir_node *active[])
    /* no need to calculate other vreg values because store & spill won't
     * be used in the following schedule again */
    store->node.value_reg = spill->value_reg;
+   store->node.vreg.dist = spill->vreg.dist;
    list_addtail(&store->node.list, &spill->list);
 
    gpir_reg *reg = gpir_create_reg(spill->block->comp);
@@ -85,6 +86,7 @@ static void regalloc_block(gpir_block *block)
    int index = 0;
    list_for_each_entry(gpir_node, node, &block->node_list, list) {
       node->vreg.index = index++;
+      node->vreg.dist = 0;
    }
 
    /* find the last successor of each node by the sequence index */
@@ -100,6 +102,7 @@ static void regalloc_block(gpir_block *block)
    /* do linear scan regalloc */
    int reg_search_start = 0;
    gpir_node *active[GPIR_VALUE_REG_NUM] = {0};
+   int child_max_dist[GPIR_VALUE_REG_NUM] = {0};
    list_for_each_entry(gpir_node, node, &block->node_list, list) {
       /* if some reg is expired */
       gpir_node_foreach_pred(node, dep) {
@@ -108,33 +111,76 @@ static void regalloc_block(gpir_block *block)
             active[pred->value_reg] = NULL;
       }
 
+      /* Find the initial dist, not taking fake write-after-read deps into
+       * account.
+       */
+
+      bool is_pred[GPIR_VALUE_REG_NUM] = {0};
+      gpir_node_foreach_pred(node, dep) {
+         int pred_dist = dep->pred->vreg.dist + gpir_get_min_dist(dep);
+         node->vreg.dist = MAX2(node->vreg.dist, pred_dist);
+         is_pred[dep->pred->value_reg] = true;
+      }
+
       /* no need to alloc value reg for root node */
       if (gpir_node_is_root(node)) {
          node->value_reg = -1;
-         continue;
-      }
+      } else {
+         /* find a free reg for this node */
+         int best_reg = -1, best_fake_dep_dist = INT_MAX;
+         for (int i = 0; i < GPIR_VALUE_REG_NUM; i++) {
+            /* round robin reg select to reduce false dep when schedule */
+            int new_reg = (reg_search_start + i) % GPIR_VALUE_REG_NUM;
+            if (active[new_reg])
+               continue;
 
-      /* find a free reg for this node */
-      int i;
-      for (i = 0; i < GPIR_VALUE_REG_NUM; i++) {
-         /* round robin reg select to reduce false dep when schedule */
-         int reg = (reg_search_start + i) % GPIR_VALUE_REG_NUM;
-         if (!active[reg]) {
-            active[reg] = node;
-            node->value_reg = reg;
-            reg_search_start++;
-            break;
+            int new_fake_dep_dist =
+               is_pred[new_reg] ?
+               node->vreg.dist : child_max_dist[new_reg];
+
+            if (best_reg == -1 ||
+                (best_fake_dep_dist > node->vreg.dist &&
+                 new_fake_dep_dist < best_fake_dep_dist) ||
+                (new_fake_dep_dist <= node->vreg.dist &&
+                 new_fake_dep_dist > best_fake_dep_dist)) {
+               best_reg = new_reg;
+               best_fake_dep_dist = new_fake_dep_dist;
+            }
+
          }
+
+         if (best_reg != -1) {
+            active[best_reg] = node;
+            node->value_reg = best_reg;
+            reg_search_start++;
+         } else {
+            /* need spill */
+            int spilled_reg = regalloc_spill_active_node(active);
+            active[spilled_reg] = node;
+            node->value_reg = spilled_reg;
+            gpir_debug("value regalloc node %d reuse reg %d\n",
+                       node->index, spilled_reg);
+         }
+
+         /* Update the node's dist to account for fake dependencies added
+          * by the scheduler.
+          */
+         node->vreg.dist = MAX2(node->vreg.dist,
+                                child_max_dist[node->value_reg]);
       }
 
-      /* need spill */
-      if (i == GPIR_VALUE_REG_NUM) {
-         int spilled_reg = regalloc_spill_active_node(active);
-         active[spilled_reg] = node;
-         node->value_reg = spilled_reg;
-         gpir_debug("value regalloc node %d reuse reg %d\n",
-                    node->index, spilled_reg);
+      /* after we're done finding a free node, update child_max_dist */
+      gpir_node_foreach_pred(node, dep) {
+         gpir_node *pred = dep->pred;
+         if (dep->type != GPIR_DEP_INPUT)
+            continue;
+
+         child_max_dist[pred->value_reg] =
+            MAX2(child_max_dist[pred->value_reg], node->vreg.dist);
       }
+
+      if (node->value_reg != -1)
+         child_max_dist[node->value_reg] = 0;
    }
 }
 
