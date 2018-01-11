@@ -79,6 +79,13 @@
  * scheduled total, below the limit. So the algorithm will always succeed.
  */
 
+typedef struct {
+   struct list_head ready_list;
+   int ready_list_slots;
+   gpir_instr *instr;
+   gpir_block *block;
+} sched_ctx;
+
 static int gpir_min_dist_alu(gpir_dep *dep)
 {
    switch (dep->pred->op) {
@@ -230,7 +237,7 @@ static void schedule_update_distance(gpir_node *node)
       if (pred->sched.dist < 0)
          schedule_update_distance(pred);
 
-      int dist = pred->sched.dist + 1;
+      int dist = pred->sched.dist + gpir_min_dist_alu(dep);
       if (node->sched.dist < dist)
          node->sched.dist = dist;
    }
@@ -378,34 +385,6 @@ static gpir_node *schedule_create_move_node(gpir_node *node)
    return &move->node;
 }
 
-static gpir_node *gpir_sched_node(gpir_instr *instr, gpir_node *node)
-{
-   if (node->op == gpir_op_mov) {
-      gpir_node *child = gpir_node_to_alu(node)->children[0];
-      gpir_node_foreach_succ_safe(node, dep) {
-         gpir_node *succ = dep->succ;
-         if (succ->sched.instr < 0 ||
-             instr->index < succ->sched.instr + gpir_get_min_dist(dep)) {
-            gpir_node_replace_pred(dep, child);
-            if (dep->type == GPIR_DEP_INPUT)
-               gpir_node_replace_child(succ, node, child);
-         }
-      }
-      MAYBE_UNUSED bool result = schedule_try_place_node(instr, node);
-      assert(result);
-      return node;
-   }
-   else {
-      gpir_node *move = schedule_create_move_node(node);
-      list_del(&node->list);
-      node->sched.ready = false;
-      node->sched.inserted = false;
-      gpir_node_replace_succ(move, node);
-      gpir_node_add_dep(move, node, GPIR_DEP_INPUT);
-      return move;
-   }
-}
-
 static bool gpir_is_input_node(gpir_node *node)
 {
    gpir_node_foreach_succ(node, dep) {
@@ -415,125 +394,348 @@ static bool gpir_is_input_node(gpir_node *node)
    return false;
 }
 
-static int gpir_get_min_scheduled_succ(gpir_node *node)
+/* Get the number of slots required for a node on the ready list.
+ */
+static int gpir_get_slots_required(gpir_node *node)
+{
+   if (!gpir_is_input_node(node))
+      return 0;
+
+   if (gpir_op_infos[node->op].may_consume_two_slots && node->sched.ready) {
+      /* If the node is fully ready, we have to assume that it may get
+       * scheduled at any time, at which point it takes up two slots.
+       */
+      return 2;
+   }
+
+   return 1;
+}
+
+/* Once we schedule the successor, would the predecessor be fully ready? */
+static bool pred_almost_ready(gpir_dep *dep)
+{
+   bool fully_ready = true;
+   gpir_node_foreach_succ(dep->pred, other_dep) {
+      gpir_node *succ = other_dep->succ;
+      if (succ->sched.instr < 0 && dep->succ != other_dep->succ) {
+         fully_ready = false;
+         break;
+      }
+   }
+
+   return fully_ready;
+}
+
+/* Speculatively schedule a dep, and count how many slots it consumes.
+ */
+static int gpir_get_dep_slots(sched_ctx *ctx, gpir_dep *dep)
+{
+   gpir_node *pred = dep->pred;
+   if (!gpir_is_input_node(pred))
+      return 0;
+
+   /* Try and speculatively schedule any loads. */
+   if (pred->type == gpir_node_type_load && pred_almost_ready(dep) &&
+       schedule_try_place_node(ctx->instr, pred)) {
+      return 0;
+   }
+
+   int total = 0;
+   if (!pred->sched.inserted)
+      total++;
+
+   if (gpir_op_infos[pred->op].may_consume_two_slots) {
+      /* If pred goes from partially ready or not ready to fully ready, then
+       * it takes up two slots as per gpir_get_slots_required(), so we need to
+       * add an extra slot.
+       */
+      if (pred_almost_ready(dep))
+         total++;
+   }
+
+   return total;
+}
+
+static void cleanup_speculative_loads(sched_ctx *ctx, gpir_node *node)
+{
+   gpir_node_foreach_pred(node, dep) {
+      gpir_node *pred = dep->pred;
+      if (pred->sched.instr >= 0) {
+         pred->sched.instr = -1;
+         gpir_instr_remove_node(ctx->instr, pred);
+      }
+   }
+}
+
+/* Get the total number of slots on the ready list if this node were to be
+ * scheduled.
+ */
+static int gpir_get_ready_list_slots(sched_ctx *ctx, gpir_node *node)
+{
+   assert(ctx->ready_list_slots <= GPIR_VALUE_REG_NUM);
+   int total = ctx->ready_list_slots - gpir_get_slots_required(node);
+
+   if (!schedule_try_place_node(ctx->instr, node))
+      return INT_MAX;
+
+   gpir_node_foreach_pred(node, dep) {
+      int slots = gpir_get_dep_slots(ctx, dep);
+      if (node->op == gpir_op_mov && slots != 0) {
+         /* At this stage, we only insert moves for loads that we couldn't
+          * schedule immediately. If we couldn't schedule the load, there's
+          * no point scheduling the move.
+          */
+         cleanup_speculative_loads(ctx, node);
+         gpir_instr_remove_node(ctx->instr, node);
+         return INT_MAX;
+      }
+      total += slots;
+   }
+
+   /* Cleanup any speculatively scheduled loads. */
+   cleanup_speculative_loads(ctx, node);
+   gpir_instr_remove_node(ctx->instr, node);
+
+   return total;
+}
+
+static bool try_place_node(sched_ctx *ctx, gpir_node *node)
+{
+   if (!schedule_try_place_node(ctx->instr, node)) {
+      gpir_debug("failed to place %d\n", node->index);
+      return false;
+   }
+
+   gpir_debug("placed node %d\n", node->index);
+
+   list_del(&node->list);
+   list_add(&node->list, &ctx->block->node_list);
+   gpir_node_foreach_pred(node, dep) {
+      gpir_node *pred = dep->pred;
+      schedule_insert_ready_list(&ctx->ready_list, pred);
+   }
+
+   return true;
+}
+
+static gpir_node *create_move(sched_ctx *ctx, gpir_node *node)
+{
+   gpir_node *move = schedule_create_move_node(node);
+   list_del(&node->list);
+   node->sched.ready = false;
+   node->sched.inserted = false;
+   gpir_node_replace_succ(move, node);
+   gpir_node_add_dep(move, node, GPIR_DEP_INPUT);
+   schedule_insert_ready_list(&ctx->ready_list, move);
+   return move;
+}
+
+static bool try_schedule_node(sched_ctx *ctx, gpir_node *node)
+{
+   if (!try_place_node(ctx, node))
+      return false;
+
+   gpir_node_foreach_pred(node, dep) {
+      gpir_node *pred = dep->pred;
+      if (dep->type == GPIR_DEP_INPUT && pred->type == gpir_node_type_load) {
+         if (!try_place_node(ctx, pred)) {
+            create_move(ctx, pred);
+         }
+      }
+   }
+
+   return true;
+}
+
+static int gpir_get_curr_ready_list_slots(sched_ctx *ctx)
+{
+   int total = 0;
+   list_for_each_entry(gpir_node, node, &ctx->ready_list, list) {
+      total += gpir_get_slots_required(node);
+   }
+
+   return total;
+}
+
+/* What gpir_get_min_end() would return if node were replaced with a move
+ * instruction not in the complex slot. Normally this is 2 + min_end, except
+ * for some store instructions which must have the move node in the same
+ * instruction.
+ */
+static int gpir_get_min_end_move(gpir_node *node)
 {
    int min = INT_MAX;
    gpir_node_foreach_succ(node, dep) {
       gpir_node *succ = dep->succ;
       if (succ->sched.instr >= 0 && dep->type == GPIR_DEP_INPUT) {
-         if (min > succ->sched.instr)
-            min = succ->sched.instr;
+         int dist = 2;
+         switch (succ->op) {
+         case gpir_op_store_temp:
+         case gpir_op_store_reg:
+         case gpir_op_store_varying:
+            dist = 0;
+            break;
+         default:
+            break;
+         }
+         if (min > succ->sched.instr + dist)
+            min = succ->sched.instr + dist;
       }
    }
    return min;
 }
 
-static gpir_node *gpir_sched_instr_pass(gpir_instr *instr,
-                                        struct list_head *ready_list)
+static bool try_node(sched_ctx *ctx, bool max_only)
 {
-   /* fully ready node reach its max dist with any of its successor */
-   list_for_each_entry_safe(gpir_node, node, ready_list, list) {
+   gpir_node *min_node = NULL;
+   int min_slots = INT_MAX;
+   list_for_each_entry(gpir_node, node, &ctx->ready_list, list) {
       if (node->sched.ready) {
-         int end = gpir_get_min_end(node);
-         assert(end >= instr->index);
-         if (instr->index < end)
+         /* First, schedule required stuff */
+         if (max_only) {
+            int end = gpir_get_min_end(node);
+            if (end != ctx->instr->index)
+               continue;
+         }
+
+         int slots = gpir_get_ready_list_slots(ctx, node);
+         if (slots == INT_MAX)
             continue;
 
-         gpir_debug("fully ready max node %d\n", node->index);
-
-         if (schedule_try_place_node(instr, node))
-            return node;
-
-         return gpir_sched_node(instr, node);
+         if (node == NULL) {
+            min_slots = slots;
+            min_node = node;
+            continue;
+         }
+         if (min_slots <= GPIR_VALUE_REG_NUM) {
+            if (node->sched.dist <= min_node->sched.dist)
+               break;
+         }
+         if (slots < min_slots) {
+            min_slots = slots;
+            min_node = node;
+         }
       }
    }
 
-   /* partially ready node reach its max dist with any of its successor */
-   list_for_each_entry_safe(gpir_node, node, ready_list, list) {
-      if (!node->sched.ready) {
-         int end = gpir_get_min_end(node);
-         assert(end >= instr->index);
-         if (instr->index < end)
-            continue;
+   if (min_node && min_slots <= GPIR_VALUE_REG_NUM) {
+      gpir_debug("trying to schedule %d (slots = %d)%s\n", min_node->index,
+                 min_slots, max_only ? " (max)" : "");
+      if (try_schedule_node(ctx, min_node))
+         ctx->ready_list_slots = min_slots;
+      return true;
+   }
 
-         gpir_debug("partially ready max node %d\n", node->index);
+   return false;
+}
 
-         return gpir_sched_node(instr, node);
+static void place_move(sched_ctx *ctx, gpir_node *node)
+{
+   gpir_node *move = create_move(ctx, node);
+   gpir_node_foreach_succ_safe(move, dep) {
+      gpir_node *succ = dep->succ;
+      if (succ->sched.instr < 0 ||
+          ctx->instr->index < succ->sched.instr + gpir_get_min_dist(dep)) {
+         gpir_node_replace_pred(dep, node);
+         if (dep->type == GPIR_DEP_INPUT)
+            gpir_node_replace_child(succ, move, node);
+      }
+   }
+   MAYBE_UNUSED bool result = try_place_node(ctx, move);
+   assert(result);
+}
+
+static bool sched_move(sched_ctx *ctx)
+{
+   list_for_each_entry(gpir_node, node, &ctx->ready_list, list) {
+      if (gpir_is_input_node(node) &&
+          gpir_get_min_end_move(node) == ctx->instr->index) {
+         place_move(ctx, node);
+         return true;
       }
    }
 
-   /* schedule node used by previous instr when count > 5 */
    int count = 0;
-   list_for_each_entry(gpir_node, node, ready_list, list) {
-      if (gpir_is_input_node(node)) {
-         int min = gpir_get_min_scheduled_succ(node);
-         assert(min >= instr->index - 1);
-         if (min == instr->index - 1)
-            count += gpir_op_infos[node->op].may_consume_two_slots ? 2 : 1;
+   list_for_each_entry(gpir_node, node, &ctx->ready_list, list) {
+      if (gpir_is_input_node(node) &&
+          gpir_get_min_end_move(node) == ctx->instr->index + 1) {
+         count += gpir_get_slots_required(node);
       }
    }
 
    if (count > 5) {
-      /* schedule fully ready node first */
-      list_for_each_entry(gpir_node, node, ready_list, list) {
-         if (gpir_is_input_node(node)) {
-            int min = gpir_get_min_scheduled_succ(node);
-            if (min == instr->index - 1 && node->sched.ready) {
-               gpir_debug(">5 ready node %d\n", node->index);
-
-               if (schedule_try_place_node(instr, node))
-                  return node;
+      /* This is a bit tricky... if a two-slot instruction becomes ready, then
+       * it could go from counting one slot to counting two. If there was
+       * another use one instruction ago, then it would add to "count",
+       * possibly making large enough that we can't get it below 5 without
+       * running out of slots unless we evict the two-slot instruction itself
+       * (that decreases count by 2 while only taking up one slot).
+       */
+      if (count - 5 > ctx->instr->alu_num_slot_free) {
+         list_for_each_entry(gpir_node, node, &ctx->ready_list, list) {
+            if (gpir_get_min_end_move(node) == ctx->instr->index + 1 &&
+                node->op == gpir_op_complex1 && node->sched.ready) {
+               gpir_debug("count > 5\n");
+               place_move(ctx, node);
+               return true;
             }
          }
       }
 
-      /* no fully ready node be scheduled, schedule partially ready node */
-      list_for_each_entry_safe(gpir_node, node, ready_list, list) {
-         if (gpir_is_input_node(node)) {
-            int min = gpir_get_min_scheduled_succ(node);
-            if (min == instr->index - 1 && !node->sched.ready) {
-               gpir_debug(">5 partially ready node %d\n", node->index);
-
-               return gpir_sched_node(instr, node);
-            }
+      list_for_each_entry(gpir_node, node, &ctx->ready_list, list) {
+         /* complex1 has a latency of two cycles, so if it is ready, we want
+          * to try not to insert a mov during the cycle after it becomes
+          * ready, since this delays when it becomes available by an extra
+          * cycle. Other opcodes don't have this problem, i.e. inserting a
+          * move won't hurt anything.
+          */
+         if (gpir_get_min_end_move(node) == ctx->instr->index + 1 &&
+             !(node->op == gpir_op_complex1 && node->sched.ready)) {
+            gpir_debug("count > 5\n");
+            place_move(ctx, node);
+            return true;
          }
       }
 
-      /* finally schedule move for fully ready node */
-      list_for_each_entry_safe(gpir_node, node, ready_list, list) {
-         if (gpir_is_input_node(node)) {
-            int min = gpir_get_min_scheduled_succ(node);
-            if (min == instr->index - 1 && node->sched.ready) {
-               gpir_debug(">5 fully ready move node %d\n", node->index);
-
-               return gpir_sched_node(instr, node);
-            }
+      /* In the case where everything was complex1, we need to try again. */
+      list_for_each_entry(gpir_node, node, &ctx->ready_list, list) {
+         if (gpir_get_min_end_move(node) == ctx->instr->index + 1) {
+            gpir_debug("count > 5\n");
+            place_move(ctx, node);
+            return true;
          }
       }
    }
 
-   /* schedule remain fully ready nodes */
-   list_for_each_entry(gpir_node, node, ready_list, list) {
-      if (node->sched.ready) {
-         gpir_debug("remain fully ready node %d\n", node->index);
-
-         if (schedule_try_place_node(instr, node))
-            return node;
-      }
-   }
-
-   return NULL;
+   return false;
 }
 
-static void schedule_print_pre_one_instr(gpir_instr *instr,
-                                         struct list_head *ready_list)
+static bool gpir_sched_instr_pass(sched_ctx *ctx)
+{
+   /* First, schedule max nodes */
+   if (try_node(ctx, true))
+      return true;
+
+   /* TODO: try to spill max nodes */
+
+   /* Schedule moves for max nodes if we couldn't schedule them. */
+   if (sched_move(ctx))
+      return true;
+
+   /* Try and schedule the rest of the nodes now. */
+   return try_node(ctx, false);
+}
+
+static void schedule_print_pre_one_instr(sched_ctx *ctx)
 {
    if (!lima_shader_debug_gp)
       return;
 
-   printf("instr %d for ready list:", instr->index);
-   list_for_each_entry(gpir_node, node, ready_list, list) {
-      printf(" %d/%c", node->index, node->sched.ready ? 'r' : 'p');
+   printf("instr %d for ready list:", ctx->instr->index);
+   list_for_each_entry(gpir_node, node, &ctx->ready_list, list) {
+      printf(" %d/%c (%d, %d, %d)", node->index, node->sched.ready ? 'r' : 'p',
+             node->sched.dist, gpir_get_slots_required(node),
+             gpir_get_min_end_move(node));
    }
    printf("\n");
 }
@@ -552,31 +754,17 @@ static void schedule_print_post_one_instr(gpir_instr *instr)
 }
 
 
-static bool schedule_one_instr(gpir_block *block, struct list_head *ready_list)
+static bool schedule_one_instr(sched_ctx *ctx)
 {
-   gpir_instr *instr = gpir_instr_create(block);
+   gpir_instr *instr = gpir_instr_create(ctx->block);
    if (unlikely(!instr))
       return false;
+   ctx->instr = instr;
 
-   schedule_print_pre_one_instr(instr, ready_list);
+   schedule_print_pre_one_instr(ctx);
 
-   while (true) {
-      gpir_node *node = gpir_sched_instr_pass(instr, ready_list);
-      if (!node)
-         break;
-
-      if (node->sched.instr < 0)
-         schedule_insert_ready_list(ready_list, node);
-      else {
-         list_del(&node->list);
-         list_add(&node->list, &block->node_list);
-
-         gpir_node_foreach_pred(node, dep) {
-            gpir_node *pred = dep->pred;
-            schedule_insert_ready_list(ready_list, pred);
-         }
-      }
-   }
+   while (gpir_sched_instr_pass(ctx))
+      assert(ctx->ready_list_slots == gpir_get_curr_ready_list_slots(ctx));
 
    schedule_print_post_one_instr(instr);
    return true;
@@ -590,18 +778,20 @@ static bool schedule_block(gpir_block *block)
          schedule_update_distance(node);
    }
 
-   struct list_head ready_list;
-   list_inithead(&ready_list);
+   sched_ctx ctx;
+   list_inithead(&ctx.ready_list);
+   ctx.block = block;
+   ctx.ready_list_slots = 0;
 
    /* construct the ready list from root nodes */
    list_for_each_entry_safe(gpir_node, node, &block->node_list, list) {
       if (gpir_node_is_root(node))
-         schedule_insert_ready_list(&ready_list, node);
+         schedule_insert_ready_list(&ctx.ready_list, node);
    }
 
    list_inithead(&block->node_list);
-   while (!list_empty(&ready_list)) {
-      if (!schedule_one_instr(block, &ready_list))
+   while (!list_empty(&ctx.ready_list)) {
+      if (!schedule_one_instr(&ctx))
          return false;
    }
 
@@ -610,26 +800,6 @@ static bool schedule_block(gpir_block *block)
 
 static void schedule_build_vreg_dependency(gpir_block *block)
 {
-   gpir_node *regs[GPIR_VALUE_REG_NUM] = {0};
-   list_for_each_entry(gpir_node, node, &block->node_list, list) {
-      /* store node has no value reg assigned */
-      if (node->value_reg < 0)
-         continue;
-
-      gpir_node *reg = regs[node->value_reg];
-      if (reg) {
-         gpir_node_foreach_succ(reg, dep) {
-            /* write after read dep should only apply to real 'read' */
-            if (dep->type != GPIR_DEP_INPUT)
-               continue;
-
-            gpir_node *succ = dep->succ;
-            gpir_node_add_dep(node, succ, GPIR_DEP_VREG_WRITE_AFTER_READ);
-         }
-      }
-      regs[node->value_reg] = node;
-   }
-
    /* merge dummy_f/m to the node created from */
    list_for_each_entry_safe(gpir_node, node, &block->node_list, list) {
       if (node->op == gpir_op_dummy_m) {
